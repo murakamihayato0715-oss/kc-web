@@ -10,6 +10,21 @@
         :handle-close="() => (drawer = false)"
       />
     </v-navigation-drawer>
+    <v-navigation-drawer v-model="aiDrawer" app right dark :width="isMobile ? '100%' : `${aiDrawerWidth}px`" temporary>
+      <div v-if="!isMobile" class="drawer-resizer" @mousedown.prevent="startResize"></div>
+      <div class="d-flex align-center pa-2 grey darken-4 white--text" style="height: 50px;">
+        <span class="font-weight-bold">AI提督チャット</span>
+        <v-spacer />
+        <v-btn icon dark @click="$refs.aiSuggest && $refs.aiSuggest.clearHistory()" class="mr-1" title="会話をクリア">
+          <v-icon>mdi-delete-sweep</v-icon>
+        </v-btn>
+        <v-btn icon dark @click="aiDrawer = false">
+          <v-icon>mdi-close</v-icon>
+        </v-btn>
+      </div>
+      <v-divider />
+      <ai-suggest ref="aiSuggest" :is-sidebar="true" style="height: calc(100vh - 50px);" @showSiteSetting="showSiteSetting" />
+    </v-navigation-drawer>
     <v-app-bar app dense dark>
       <v-app-bar-nav-icon v-if="!drawerFixed" @click="drawer = !drawer" />
       <v-btn icon @click="pushPage('/')" :disabled="$route.path === '/'">
@@ -73,6 +88,14 @@
           </v-btn>
         </template>
         <span>{{ $t("Home.おまけ") }}</span>
+      </v-tooltip>
+      <v-tooltip left>
+        <template v-slot:activator="{ on, attrs }">
+          <v-btn class="d-none d-sm-block" icon @click="aiDrawer = !aiDrawer" v-bind="attrs" v-on="on">
+            <v-icon color="green lighten-2">mdi-robot</v-icon>
+          </v-btn>
+        </template>
+        <span>AI編成提案</span>
       </v-tooltip>
       <v-tooltip left>
         <template v-slot:activator="{ on, attrs }">
@@ -502,6 +525,56 @@
                 </div>
               </div>
             </div>
+            <div>
+              <div class="site-setting-header">
+                <div class="body-2">AI設定 (Gemini)</div>
+                <div class="header-divider" />
+              </div>
+              <div class="site-setting-body">
+                <v-select
+                  v-model="aiConfig.provider"
+                  :items="aiProviders"
+                  label="AIプロバイダー"
+                  outlined
+                  dense
+                  hide-details
+                  class="mb-3"
+                />
+                <v-text-field
+                  v-model="aiConfig.apiKey"
+                  label="APIキー"
+                  outlined
+                  dense
+                  hide-details
+                  :type="showAiKey ? 'text' : 'password'"
+                  :append-icon="showAiKey ? 'mdi-eye-off' : 'mdi-eye'"
+                  @click:append="showAiKey = !showAiKey"
+                  :disabled="aiConfig.provider === 'none'"
+                  class="mb-3"
+                />
+                <v-select
+                  v-model="aiConfig.model"
+                  :items="aiModels"
+                  label="モデル"
+                  outlined
+                  dense
+                  hide-details
+                  :disabled="aiConfig.provider === 'none'"
+                  class="mb-3"
+                />
+                <v-alert v-if="testAiResult" :type="testAiResult.ok ? 'success' : 'error'" dense class="body-2 mb-3">
+                  {{ testAiResult.message }}
+                </v-alert>
+                <div class="d-flex align-center">
+                  <v-btn @click="testAiConnection" :loading="testingAi" :disabled="aiConfig.provider === 'none'" outlined small class="mr-2">
+                    接続テスト
+                  </v-btn>
+                  <v-btn @click="saveAiSettings" color="primary" small>
+                    保存
+                  </v-btn>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </v-card>
@@ -733,6 +806,10 @@ import SaveData from '@/classes/saveData/saveData';
 import SiteSetting, { SiteTheme } from '@/classes/siteSetting';
 import FirebaseManager from '@/classes/firebaseManager';
 import LZString from 'lz-string';
+import AiSuggest from '@/views/AiSuggest.vue';
+import { loadAiConfig, saveAiConfig } from '@/ai/storage';
+import { suggestFleet } from '@/ai/client';
+import { AiConfig } from '@/ai/types';
 import ShipStock from './classes/fleet/shipStock';
 import ItemStock from './classes/item/itemStock';
 import Fleet from './classes/fleet/fleet';
@@ -756,11 +833,14 @@ export default Vue.extend({
     SettingInitialLevel,
     UploadSaveData,
     SaveDataMobileTab,
+    AiSuggest,
   },
   data: () => ({
     saveData: new SaveData(),
     mainSaveData: new SaveData(),
     drawer: false,
+    aiDrawer: false,
+    aiDrawerWidth: 450,
     configDialog: false,
     loading: true,
     somethingText: '',
@@ -807,6 +887,19 @@ export default Vue.extend({
     shipStockDiffDialog: false,
     isMobile: true,
     mobileTabDialog: false,
+    aiConfig: { provider: 'none', apiKey: '', model: 'gemini-2.5-flash' } as AiConfig,
+    showAiKey: false,
+    testingAi: false,
+    testAiResult: null as { ok: boolean; message: string } | null,
+    aiProviders: [
+      { text: '使用しない', value: 'none' },
+      { text: 'Google Gemini', value: 'gemini' },
+    ],
+    aiModels: [
+      { text: 'Gemini 3.5 Flash (最新・超高速)', value: 'gemini-3.5-flash' },
+      { text: 'Gemini 2.5 Flash (安定・推奨)', value: 'gemini-2.5-flash' },
+      { text: 'Gemini 2.5 Pro (高精度・複雑な思考)', value: 'gemini-2.5-pro' },
+    ],
   }),
   computed: {
     getCompletedAll() {
@@ -942,6 +1035,9 @@ export default Vue.extend({
   created() {
     this.setting = this.$store.state.siteSetting as SiteSetting;
     this.saveData = this.$store.state.saveData as SaveData;
+    loadAiConfig().then((config) => {
+      this.aiConfig = config;
+    });
     // セーブデータの更新を購読
     this.unsubscribe = this.$store.subscribe((mutation, state) => {
       if (mutation.type === 'updateSaveData') {
@@ -999,6 +1095,41 @@ export default Vue.extend({
     });
   },
   methods: {
+    async saveAiSettings() {
+      await saveAiConfig(this.aiConfig);
+      this.inform('AI設定を保存しました。');
+    },
+    async testAiConnection() {
+      this.testingAi = true;
+      this.testAiResult = null;
+      try {
+        const result = await suggestFleet(this.aiConfig, '5-4を制空確保で周回したい');
+        this.testAiResult = result
+          ? { ok: true, message: '接続成功！AIが応答しました。' }
+          : { ok: false, message: 'APIキーを確認してください。' };
+      } catch (err: any) {
+        this.testAiResult = { ok: false, message: `接続失敗: ${err.message || 'エラーが発生しました。'}` };
+      }
+      this.testingAi = false;
+    },
+    startResize() {
+      document.addEventListener('mousemove', this.resize);
+      document.addEventListener('mouseup', this.stopResize);
+      document.body.style.cursor = 'ew-resize';
+      document.body.style.userSelect = 'none';
+    },
+    resize(e: MouseEvent) {
+      const newWidth = window.innerWidth - e.clientX;
+      if (newWidth > 300 && newWidth < window.innerWidth * 0.8) {
+        this.aiDrawerWidth = newWidth;
+      }
+    },
+    stopResize() {
+      document.removeEventListener('mousemove', this.resize);
+      document.removeEventListener('mouseup', this.stopResize);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    },
     updateIsMobile() {
       this.isMobile = window.innerWidth < 600;
     },
@@ -2081,6 +2212,22 @@ export default Vue.extend({
     display: grid;
     flex-wrap: wrap;
   }
+}
+
+.drawer-resizer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+  z-index: 100;
+  background: transparent;
+  transition: background 0.2s;
+}
+.drawer-resizer:hover,
+.drawer-resizer:active {
+  background: rgba(255, 255, 255, 0.2);
 }
 </style>
 

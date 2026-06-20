@@ -30,6 +30,11 @@ const routes: Array<RouteConfig> = [
     name: 'ExtraPage',
     component: () => import('../views/ExtraCalculator.vue'),
   },
+  {
+    path: '/ai-suggest',
+    name: 'AiSuggest',
+    component: () => import('@/views/AiSuggest.vue'),
+  },
 ];
 
 const router = new VueRouter({
