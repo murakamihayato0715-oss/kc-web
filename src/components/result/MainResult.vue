@@ -364,6 +364,160 @@
       <div class="pl-2 caption mt-1">※ {{ $t("Result.制空値は航空支援専用の制空値です。熟練度や改修値に影響されません。") }}</div>
       <div class="pl-2 caption">※ {{ $t("Result.敵制空値は本隊航空戦終了時点での制空値の平均です。") }}</div>
     </v-card>
+
+    <!-- 戦闘シミュレーション (kancolle-replay) -->
+    <v-card class="mx-1 mx-sm-3 my-2 pa-4" outlined>
+      <div class="d-flex align-center pb-2">
+        <v-icon color="primary" class="mr-2">mdi-sword-cross</v-icon>
+        <span class="text-subtitle-1 font-weight-bold">実戦戦闘シミュレーション</span>
+        <v-spacer />
+        <div class="d-flex align-center" style="gap: 8px;" v-show="!simRunning">
+          <v-select
+            v-model="simCount"
+            :items="[100, 500, 1000]"
+            label="試行回数"
+            dense
+            hide-details
+            outlined
+            style="width: 110px;"
+          />
+          <v-btn color="primary" small @click="startSortieSim">
+            シミュレーション実行
+          </v-btn>
+        </div>
+      </div>
+      <v-divider class="my-2" />
+
+      <!-- シミュレーション設定パネル -->
+      <v-expansion-panels class="mb-3" flat v-show="!simRunning">
+        <v-expansion-panel class="border rounded-lg">
+          <v-expansion-panel-header class="py-2 px-4 grey lighten-5">
+            <div class="d-flex align-center">
+              <v-icon color="primary" class="mr-2">mdi-cog-outline</v-icon>
+              <span class="text-subtitle-2 font-weight-bold grey--text text--darken-3">シミュレーション設定</span>
+              <v-spacer />
+              <span class="text-caption grey--text mr-2" v-if="setting">
+                モード: {{ setting.simSortieMode === 'consecutive' ? '連続周回' : '単発出撃' }} /
+                大破: {{ setting.simRetreatPolicy === 'retreat' ? '大破撤退' : setting.simRetreatPolicy === 'damecon' ? 'ダメコン進撃' : '大破進撃' }} /
+                バケツ: {{ setting.simBucketHpPercent * 100 }}%
+                {{ setting.simSubmarineDecoy ? ' / デコイ進撃' : '' }}
+              </span>
+            </div>
+          </v-expansion-panel-header>
+          <v-expansion-panel-content class="px-2 py-3 border-top">
+            <v-row dense v-if="setting">
+              <v-col cols="12" sm="6" md="3">
+                <v-select
+                  v-model="setting.simSortieMode"
+                  :items="sortieModeItems"
+                  label="出撃モード"
+                  dense
+                  outlined
+                  hide-details
+                  @change="saveSettings"
+                />
+              </v-col>
+              <v-col cols="12" sm="6" md="3">
+                <v-select
+                  v-model="setting.simRetreatPolicy"
+                  :items="retreatPolicyItems"
+                  label="大破時挙動"
+                  dense
+                  outlined
+                  hide-details
+                  @change="saveSettings"
+                />
+              </v-col>
+              <v-col cols="12" sm="6" md="3">
+                <v-select
+                  v-model="setting.simBucketHpPercent"
+                  :items="bucketHpItems"
+                  label="バケツ使用ライン"
+                  dense
+                  outlined
+                  hide-details
+                  @change="saveSettings"
+                />
+              </v-col>
+              <v-col cols="12" sm="6" md="3">
+                <v-text-field
+                  v-model.number="setting.simBucketTime"
+                  type="number"
+                  label="許容修復時間 (分)"
+                  dense
+                  outlined
+                  hide-details
+                  suffix="分"
+                  @change="saveSettings"
+                />
+              </v-col>
+            </v-row>
+
+            <v-row dense v-if="setting" class="mt-2">
+              <v-col cols="12">
+                <v-checkbox
+                  v-model="setting.simSubmarineDecoy"
+                  label="潜水艦デコイ大破進撃を許可 (大破した潜水艦を撤退判定から除外)"
+                  dense
+                  hide-details
+                  @change="saveSettings"
+                  class="mt-0 font-weight-medium text-caption"
+                />
+              </v-col>
+            </v-row>
+
+            <!-- ダメコン所持情報および警告 -->
+            <div class="d-flex align-center mt-3 flex-wrap text-caption" style="gap: 12px;" v-if="setting">
+              <div class="grey--text text--darken-1 font-weight-medium">
+                <v-icon small class="mr-1">mdi-shield-outline</v-icon>
+                艦隊のダメコン装備数:
+                <span class="font-weight-bold primary--text">要員 x{{ dameconCount.normal }}</span> /
+                <span class="font-weight-bold success--text">女神 x{{ dameconCount.goddess }}</span>
+              </div>
+              <v-alert
+                v-if="setting.simRetreatPolicy === 'damecon' && dameconCount.normal === 0 && dameconCount.goddess === 0"
+                type="warning"
+                dense
+                class="mb-0 py-1 px-3 text-caption font-weight-bold"
+                outlined
+              >
+                ⚠️ ダメコンが装備されていません。大破時は撤退扱いになります。
+              </v-alert>
+            </div>
+
+            <!-- 陣形情報 (一時的オーバーライド) -->
+            <div class="mt-2 text-caption grey--text text--darken-1" v-if="customFormations.length > 0">
+              <div class="font-weight-bold mb-1">
+                <v-icon small class="mr-1">mdi-format-list-bulleted</v-icon>
+                進行ルート陣形設定 (一時的オーバーライド)
+              </div>
+              <div class="d-flex flex-wrap align-center mt-1" style="gap: 8px;">
+                <div v-for="(formVal, fIdx) in customFormations" :key="fIdx" style="width: 140px;">
+                  <v-select
+                    v-model="customFormations[fIdx]"
+                    :items="formations"
+                    :label="`${fIdx + 1}戦目`"
+                    dense
+                    outlined
+                    hide-details
+                  />
+                </div>
+              </div>
+            </div>
+          </v-expansion-panel-content>
+        </v-expansion-panel>
+      </v-expansion-panels>
+
+      <div v-if="simRunning" class="text-center py-4">
+        <v-progress-circular indeterminate color="primary" class="mb-2" />
+        <div class="text-caption grey--text">シミュレーション計算中... ({{ simCount }}回)</div>
+      </div>
+      <sortie-simulation-result :result="simResult" v-else-if="simResult && !simRunning" />
+      <div v-else class="text-center py-6 text-caption grey--text">
+        現在の自軍編成、基地航空隊、敵艦隊の配置をもとに、実戦形式（昼夜戦闘・撤退判定あり）のシミュレーションを実行します。
+      </div>
+    </v-card>
+
     <v-dialog width="1200" v-model="detailDialog" transition="scroll-x-transition" @input="toggleDetailDialog" :fullscreen="isMobile">
       <v-card :class="{ fullscreen: isMobile }">
         <div class="d-flex pt-2 pb-1 pr-2">
@@ -645,6 +799,8 @@ import Convert from '@/classes/convert';
 import EnemyMaster from '@/classes/enemy/enemyMaster';
 import ShipMaster from '@/classes/fleet/shipMaster';
 import SiteSetting from '@/classes/siteSetting';
+import SortieSimulationResult from '@/components/result/SortieSimulationResult.vue';
+import { runSortieSimulation, SimTotalResult } from '@/simulator/executor';
 import FleetInfo from '../../classes/fleet/fleetInfo';
 import AirbaseInfo from '../../classes/airbase/airbaseInfo';
 
@@ -653,6 +809,7 @@ export default Vue.extend({
   components: {
     AirStatusResultBar,
     PlaneDetailResult,
+    SortieSimulationResult,
   },
   props: {
     value: {
@@ -706,6 +863,10 @@ export default Vue.extend({
     ammoCorr: '',
     detailEditableItems: [] as Item[],
     isMobile: true,
+    simResult: null as SimTotalResult | null,
+    simRunning: false,
+    simCount: 1000,
+    customFormations: [] as number[],
   }),
   computed: {
     formations(): Formation[] {
@@ -976,6 +1137,76 @@ export default Vue.extend({
       const setting = this.$store.state.siteSetting as SiteSetting;
       return this.$i18n.locale !== 'ja' && !setting.nameIsNotTranslate;
     },
+    setting(): any {
+      return this.$store.state.siteSetting;
+    },
+    dameconCount(): { normal: number; goddess: number } {
+      let normal = 0;
+      let goddess = 0;
+      const manager = this.value;
+      if (manager && manager.fleetInfo) {
+        manager.fleetInfo.fleets.forEach((fleet, fIdx) => {
+          if (fIdx > 1) return;
+          fleet.ships.forEach((ship) => {
+            if (!ship.isActive || ship.isEmpty) return;
+            ship.items.forEach((item) => {
+              if (item.data && item.data.id === 42) {
+                normal += 1;
+              }
+              if (item.data && item.data.id === 43) {
+                goddess += 1;
+              }
+            });
+            if (ship.exItem && ship.exItem.data) {
+              if (ship.exItem.data.id === 42) {
+                normal += 1;
+              }
+              if (ship.exItem.data.id === 43) {
+                goddess += 1;
+              }
+            }
+          });
+        });
+      }
+      return { normal, goddess };
+    },
+    sortieModeItems(): any[] {
+      return [
+        { text: '単発出撃 (毎回HP・疲労回復)', value: 'single' },
+        { text: '連続周回 (ダメージ・疲労蓄積)', value: 'consecutive' },
+      ];
+    },
+    retreatPolicyItems(): any[] {
+      return [
+        { text: '大破撤退 (ダメコン無視)', value: 'retreat' },
+        { text: 'ダメコン進撃 (ダメコン消費/無ければ撤退)', value: 'damecon' },
+        { text: '大破進撃 (常に進撃)', value: 'advance' },
+      ];
+    },
+    bucketHpItems(): any[] {
+      return [
+        { text: '使用しない (0%)', value: 0 },
+        { text: '大破以下 (25%)', value: 0.25 },
+        { text: '中破以下 (50%)', value: 0.5 },
+        { text: '小破以下 (75%)', value: 0.75 },
+        { text: '少しでも削れたら (99%)', value: 0.99 },
+      ];
+    },
+  },
+  watch: {
+    value: {
+      handler(newVal) {
+        if (newVal && newVal.battleInfo && newVal.battleInfo.fleets) {
+          if (this.customFormations.length !== newVal.battleInfo.fleets.length) {
+            this.customFormations = newVal.battleInfo.fleets.map((f: any) => f.mainFleetFormation);
+          }
+        } else {
+          this.customFormations = [];
+        }
+      },
+      immediate: true,
+      deep: true,
+    },
   },
   methods: {
     refresh() {
@@ -1157,6 +1388,36 @@ export default Vue.extend({
       }
 
       return name;
+    },
+    async startSortieSim() {
+      if (this.simRunning) return;
+      this.simRunning = true;
+      try {
+        const itemStock = this.$store.state.itemStock || [];
+        const findStockCount = (id: number) => {
+          const s = itemStock.find((v: any) => v.id === id);
+          return s ? s.num.reduce((a: number, b: number) => a + b, 0) : 0;
+        };
+        const simSettings = {
+          sortieMode: this.setting.simSortieMode,
+          retreatPolicy: this.setting.simRetreatPolicy,
+          bucketHpPercent: this.setting.simBucketHpPercent,
+          bucketTime: this.setting.simBucketTime,
+          dameconStock: findStockCount(42),
+          goddessStock: findStockCount(43),
+          customFormations: this.customFormations,
+          submarineDecoy: this.setting.simSubmarineDecoy,
+        };
+        this.simResult = await runSortieSimulation(this.value, this.simCount, simSettings);
+      } catch (e) {
+        console.error(e);
+        this.$emit('inform', 'シミュレーション実行中にエラーが発生しました。');
+      } finally {
+        this.simRunning = false;
+      }
+    },
+    saveSettings() {
+      this.$store.dispatch('updateSetting', this.setting);
     },
   },
 });

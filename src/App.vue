@@ -15,7 +15,7 @@
       <div class="d-flex align-center pa-2 grey darken-4 white--text" style="height: 50px;">
         <span class="font-weight-bold">AI提督チャット</span>
         <v-spacer />
-        <v-btn icon dark @click="$refs.aiSuggest && $refs.aiSuggest.clearHistory()" class="mr-1" title="会話をクリア">
+        <v-btn icon dark @click="clearAiHistory" class="mr-1" title="会話をクリア">
           <v-icon>mdi-delete-sweep</v-icon>
         </v-btn>
         <v-btn icon dark @click="aiDrawer = false">
@@ -549,7 +549,7 @@
                   :type="showAiKey ? 'text' : 'password'"
                   :append-icon="showAiKey ? 'mdi-eye-off' : 'mdi-eye'"
                   @click:append="showAiKey = !showAiKey"
-                  :disabled="aiConfig.provider === 'none'"
+                  :disabled="aiConfig.provider === 'none' || aiConfig.provider === 'mock'"
                   class="mb-3"
                 />
                 <v-select
@@ -559,7 +559,7 @@
                   outlined
                   dense
                   hide-details
-                  :disabled="aiConfig.provider === 'none'"
+                  :disabled="aiConfig.provider === 'none' || aiConfig.provider === 'mock'"
                   class="mb-3"
                 />
                 <v-alert v-if="testAiResult" :type="testAiResult.ok ? 'success' : 'error'" dense class="body-2 mb-3">
@@ -894,6 +894,7 @@ export default Vue.extend({
     aiProviders: [
       { text: '使用しない', value: 'none' },
       { text: 'Google Gemini', value: 'gemini' },
+      { text: 'ローカルデバッグ (無料・モック応答)', value: 'mock' },
     ],
     aiModels: [
       { text: 'Gemini 3.5 Flash (最新・超高速)', value: 'gemini-3.5-flash' },
@@ -1098,6 +1099,12 @@ export default Vue.extend({
     async saveAiSettings() {
       await saveAiConfig(this.aiConfig);
       this.inform('AI設定を保存しました。');
+    },
+    clearAiHistory() {
+      const aiSuggest = this.$refs.aiSuggest as any;
+      if (aiSuggest && typeof aiSuggest.clearHistory === 'function') {
+        aiSuggest.clearHistory();
+      }
     },
     async testAiConnection() {
       this.testingAi = true;

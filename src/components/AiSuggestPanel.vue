@@ -197,6 +197,9 @@ import ShipMaster from '@/classes/fleet/shipMaster';
 import ItemMaster from '@/classes/item/itemMaster';
 import CalcManager from '@/classes/calcManager';
 import Airbase from '@/classes/airbase/airbase';
+import EnemyMaster from '@/classes/enemy/enemyMaster';
+import CellMaster from '@/classes/enemy/cellMaster';
+import { applyMapAndEnemies } from '@/ai/utils';
 
 export default Vue.extend({
   name: 'AiSuggestPanel',
@@ -253,38 +256,17 @@ export default Vue.extend({
 
       try {
         // 現在計算機にロードされている艦隊の計算値データを収集
-        let currentFleetData: any = null;
-        const mainSaveData = this.$store.state.mainSaveData as SaveData;
-        if (mainSaveData) {
-          const manager = mainSaveData.tempData[mainSaveData.tempIndex] as CalcManager;
-          if (manager && manager.fleetInfo) {
-            currentFleetData = {
-              fleets: manager.fleetInfo.fleets.map((f: any) => {
-                let speedText = '不明';
-                if (f.speed === 10) speedText = '高速';
-                else if (f.speed === 5) speedText = '低速';
-                else if (f.speed === 15) speedText = '高速+';
-                else if (f.speed === 20) speedText = '最速';
+        // 現在計算機にロードされている艦隊の計算値データを直接ストアから収集
+        const manager = this.$store.state.calcManager as CalcManager;
 
-                return {
-                  airPower: f.fullAirPower || 0,
-                  los: f.los || 0,
-                  speed: speedText,
-                  ships: f.ships.map((s: any) => s.data.name || ''),
-                };
-              }),
-            };
-          }
-        }
-
-        const fleetContext = buildFleetContext(
+        const fleetContext = await buildFleetContext(
           this.$store.state.shipStock,
           this.$store.state.ships,
           this.$store.state.itemStock,
           this.$store.state.items,
           this.$store.state.equipShips,
           userText,
-          currentFleetData,
+          manager,
         );
 
         const searchTerms = this.chatHistory
@@ -355,6 +337,18 @@ export default Vue.extend({
       const fleetSuggestList = suggestion.fleets;
       const shipMasters = this.$store.state.ships as ShipMaster[];
       const itemMasters = this.$store.state.items as ItemMaster[];
+
+      // Apply map and enemies if mapId is suggested
+      if (suggestion.mapId) {
+        const cells = this.$store.state.cells as CellMaster[];
+        const enemies = this.$store.getters.getEnemies as EnemyMaster[];
+        applyMapAndEnemies(manager, suggestion.mapId, cells, enemies, itemMasters);
+      }
+
+      // Rename preset name if presetName is suggested
+      if (suggestion.presetName) {
+        mainSaveData.name = suggestion.presetName;
+      }
 
       fleetSuggestList.forEach((fleetSuggest, fIdx) => {
         // 第一艦隊(0)と第二艦隊(1)のみ対応。また、現在の計算機に第2艦隊が存在しない（通常艦隊編成など）場合はスルー

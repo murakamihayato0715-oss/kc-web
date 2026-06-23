@@ -11,8 +11,137 @@ importScripts(
   './kcsimcombined.js'
 );
 
+// Wrap canContinue to allow overriding ignoreDamecon globally and submarine decoy policy
+const originalCanContinue = canContinue;
+canContinue = function(ships1, ships1C, ignoreFCF, ignoreDamecon) {
+  const overrideIgnoreDamecon = self.GLOBAL_IGNORE_DAMECON;
+  const isDecoyActive = self.GLOBAL_SUBMARINE_DECOY;
+
+  let tempHPs = [];
+  if (isDecoyActive) {
+    for (let i = 1; i < ships1.length; i++) {
+      let ship = ships1[i];
+      if (ship && (ship.type === 'SS' || ship.type === 'SSV') && ship.HP/ship.maxHP <= 0.25) {
+        tempHPs.push({ ship: ship, HP: ship.HP });
+        ship.HP = ship.maxHP;
+      }
+    }
+    if (ships1C) {
+      for (let i = 0; i < ships1C.length; i++) {
+        let ship = ships1C[i];
+        if (ship && (ship.type === 'SS' || ship.type === 'SSV') && ship.HP/ship.maxHP <= 0.25) {
+          tempHPs.push({ ship: ship, HP: ship.HP });
+          ship.HP = ship.maxHP;
+        }
+      }
+    }
+  }
+
+  const result = originalCanContinue(ships1, ships1C, ignoreFCF, ignoreDamecon !== undefined ? ignoreDamecon : overrideIgnoreDamecon);
+
+  // Restore HPs
+  for (let item of tempHPs) {
+    item.ship.HP = item.HP;
+  }
+
+  return result;
+};
+
+// Global variables for tracking Damecon stats and inventory resupply
+self.TOTAL_DAMECON_USED = 0;
+self.MAX_DAMECON_USED = 0;
+self.TOTAL_GODDESS_USED = 0;
+self.MAX_GODDESS_USED = 0;
+self.TEMP_DAMECON_USED = 0;
+self.TEMP_GODDESS_USED = 0;
+self.GLOBAL_DAMECON_POOL = 0;
+self.GLOBAL_GODDESS_POOL = 0;
+self.GLOBAL_SUBMARINE_DECOY = false;
+
+// Wrap Ship.prototype.reset to apply custom repairs resupply and morale reset on bucket
+const originalShipReset = Ship.prototype.reset;
+Ship.prototype.reset = function(notHP, notMorale) {
+  // Count consumed in this sortie for this ship
+  if (this.repairsOrig) {
+    let count42Orig = this.repairsOrig.filter(id => id == 42).length;
+    let count42 = this.repairs ? this.repairs.filter(id => id == 42).length : 0;
+    let cons42 = count42Orig - count42;
+    self.TEMP_DAMECON_USED += cons42;
+    self.TOTAL_DAMECON_USED += cons42;
+
+    let count43Orig = this.repairsOrig.filter(id => id == 43).length;
+    let count43 = this.repairs ? this.repairs.filter(id => id == 43).length : 0;
+    let cons43 = count43Orig - count43;
+    self.TEMP_GODDESS_USED += cons43;
+    self.TOTAL_GODDESS_USED += cons43;
+
+    // Resupply logic for consecutive mode
+    if (CARRYOVERHP) {
+      let resupply42 = Math.min(cons42, self.GLOBAL_DAMECON_POOL);
+      self.GLOBAL_DAMECON_POOL -= resupply42;
+
+      let resupply43 = Math.min(cons43, self.GLOBAL_GODDESS_POOL);
+      self.GLOBAL_GODDESS_POOL -= resupply43;
+
+      let deficit42 = cons42 - resupply42;
+      let deficit43 = cons43 - resupply43;
+      let nextRepairs = [];
+      for (let id of this.repairsOrig) {
+        if (id == 42 && deficit42 > 0) {
+          deficit42--;
+        } else if (id == 43 && deficit43 > 0) {
+          deficit43--;
+        } else {
+          nextRepairs.push(id);
+        }
+      }
+      this._nextRepairs = nextRepairs;
+    }
+  }
+
+  // Morale recovery on bucket usage
+  if (CARRYOVERHP && CARRYOVERMORALE) {
+    // If notHP is false, it means HP is reset to maxHP (meaning a bucket was used!)
+    if (!notHP) {
+      // Force morale recovery to at least 49
+      this.morale = Math.max(this.morale, 49);
+    }
+  }
+
+  // Call original reset
+  originalShipReset.call(this, notHP, notMorale);
+
+  // Override repairs in consecutive mode
+  if (CARRYOVERHP && this._nextRepairs !== undefined) {
+    this.repairs = this._nextRepairs.slice();
+  }
+
+  // Check if this is the last ship of the last fleet being reset (sortie iteration finished)
+  if (FLEETS1 && FLEETS1.length > 0) {
+    let lastFleet = FLEETS1[FLEETS1.length - 1];
+    if (lastFleet && lastFleet.ships && lastFleet.ships.length > 0) {
+      let lastShip = lastFleet.ships[lastFleet.ships.length - 1];
+      if (this === lastShip) {
+        if (self.TEMP_DAMECON_USED > self.MAX_DAMECON_USED) {
+          self.MAX_DAMECON_USED = self.TEMP_DAMECON_USED;
+        }
+        if (self.TEMP_GODDESS_USED > self.MAX_GODDESS_USED) {
+          self.MAX_GODDESS_USED = self.TEMP_GODDESS_USED;
+        }
+        self.TEMP_DAMECON_USED = 0;
+        self.TEMP_GODDESS_USED = 0;
+      }
+    }
+  }
+};
+
 // Mock UI/DOM-related functions so the simulator runs without errors
 var updateResults = function(totalResult) {
+  // Append Damecon statistics to final result
+  totalResult.totalDameconUsed = self.TOTAL_DAMECON_USED;
+  totalResult.maxDameconUsed = self.MAX_DAMECON_USED;
+  totalResult.totalGoddessUsed = self.TOTAL_GODDESS_USED;
+  totalResult.maxGoddessUsed = self.MAX_GODDESS_USED;
   self.postMessage({ type: 'results', data: totalResult });
 };
 
@@ -98,6 +227,20 @@ function simDataLoad(data) {
       MECHANICS[mechanic] = data.mechanics[mechanic];
     }
   }
+  
+  // Set carry-over variables
+  if (data.carryOverHp !== undefined) CARRYOVERHP = !!data.carryOverHp;
+  if (data.carryOverMorale !== undefined) CARRYOVERMORALE = !!data.carryOverMorale;
+  
+  // Set retreat policy
+  if (data.retreatPolicy === 'advance') {
+    DORETREAT = false;
+  } else {
+    DORETREAT = true;
+  }
+  self.GLOBAL_IGNORE_DAMECON = (data.retreatPolicy === 'retreat');
+  self.GLOBAL_SUBMARINE_DECOY = !!data.submarineDecoy;
+  
   if (data.bucketHPPercent != null) BUCKETPERCENT = data.bucketHPPercent;
   if (data.bucketTime != null) BUCKETTIME = data.bucketTime;
   if (data.continueOnTaiha) DORETREAT = false;
@@ -224,8 +367,19 @@ function simDataLoadShips(dataShips, side) {
 self.onmessage = function(e) {
   let { type, data } = e.data;
   if (type === 'simulate') {
-    let numsims = data.numSims || 1000;
+    let numsims = data.numSims || 5000;
     try {
+      // Initialize pools and stats
+      self.TOTAL_DAMECON_USED = 0;
+      self.MAX_DAMECON_USED = 0;
+      self.TOTAL_GODDESS_USED = 0;
+      self.MAX_GODDESS_USED = 0;
+      self.TEMP_DAMECON_USED = 0;
+      self.TEMP_GODDESS_USED = 0;
+      self.GLOBAL_DAMECON_POOL = data.dameconStock || 0;
+      self.GLOBAL_GODDESS_POOL = data.goddessStock || 0;
+      self.GLOBAL_SUBMARINE_DECOY = !!data.submarineDecoy;
+
       let optionsAll = simDataLoad(data);
       let combineType = data.fleetF.combineType;
       

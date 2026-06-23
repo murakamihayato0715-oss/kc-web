@@ -163,6 +163,21 @@ export default class SiteSetting {
   /** 最後にバックアップ通知を表示した日時 */
   public lastBackupPromptAt: number;
 
+  /** シミュレーション出撃モード ('single' | 'consecutive') */
+  public simSortieMode: 'single' | 'consecutive';
+
+  /** シミュレーション大破進撃ポリシー ('retreat' | 'damecon' | 'advance') */
+  public simRetreatPolicy: 'retreat' | 'damecon' | 'advance';
+
+  /** シミュレーションバケツ使用HP率 (0.0 ~ 1.0) */
+  public simBucketHpPercent: number;
+
+  /** シミュレーションバケツ使用許容修復時間 (分) */
+  public simBucketTime: number;
+
+  /** 潜水艦デコイ大破進撃設定 (true の場合、大破した潜水艦を撤退判定から除外する) */
+  public simSubmarineDecoy: boolean;
+
   constructor(setting?: SiteSetting) {
     if (setting) {
       this.id = setting.id;
@@ -214,6 +229,11 @@ export default class SiteSetting {
       this.importShipMinLevel = setting.importShipMinLevel ?? 1;
       this.lastBackupCreatedAt = setting.lastBackupCreatedAt ?? 0;
       this.lastBackupPromptAt = setting.lastBackupPromptAt ?? 0;
+      this.simSortieMode = setting.simSortieMode ? setting.simSortieMode : 'single';
+      this.simRetreatPolicy = setting.simRetreatPolicy ? setting.simRetreatPolicy : 'damecon';
+      this.simBucketHpPercent = setting.simBucketHpPercent !== undefined ? setting.simBucketHpPercent : 0.5;
+      this.simBucketTime = setting.simBucketTime !== undefined ? setting.simBucketTime : 5940;
+      this.simSubmarineDecoy = setting.simSubmarineDecoy !== undefined ? !!setting.simSubmarineDecoy : false;
 
       if (!setting.planeInitialLevels || !setting.planeInitialLevels.length) {
         this.planeInitialLevels = [
@@ -322,6 +342,11 @@ export default class SiteSetting {
       this.allowDataUse = true;
       this.lastBackupCreatedAt = 0;
       this.lastBackupPromptAt = 0;
+      this.simSortieMode = 'single';
+      this.simRetreatPolicy = 'damecon';
+      this.simBucketHpPercent = 0.5;
+      this.simBucketTime = 5940;
+      this.simSubmarineDecoy = false;
     }
   }
 }

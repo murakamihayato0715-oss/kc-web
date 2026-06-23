@@ -243,6 +243,7 @@ export default Vue.extend({
         this.calcManager.fleetInfo.calculated = true;
         this.calcManager.battleInfo.calculated = true;
 
+        this.$store.commit('setCalcManager', manager);
         this.calculate();
         this.sortContentFromSetting();
       } else if (mutation.type === 'updateSaveData') {
@@ -302,6 +303,15 @@ export default Vue.extend({
     },
   },
   watch: {
+    calcManager: {
+      handler(newVal) {
+        if (newVal) {
+          this.$store.commit('setCalcManager', newVal);
+        }
+      },
+      deep: true,
+      immediate: true,
+    },
     'calcManager.airbaseInfo': {
       handler() {
         if (!this.calcManager.airbaseInfo.calculated) {
@@ -409,6 +419,8 @@ export default Vue.extend({
       if (mainData && needPutHistory && !isIgnoreHistory && count === 0) {
         mainData.putHistory(manager);
       }
+
+      this.$store.commit('setCalcManager', manager);
 
       // 次回計算が実行されたら履歴に入れたい
       manager.airbaseInfo.ignoreHistory = false;

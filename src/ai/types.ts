@@ -1,4 +1,4 @@
-export type AiProvider = 'gemini' | 'none';
+export type AiProvider = 'gemini' | 'none' | 'mock';
 
 export interface AiConfig {
   provider: AiProvider;
@@ -27,6 +27,8 @@ export interface MultiFleetSuggestion {
   fleets: FleetSuggestion[];
   airbases?: AirbaseSuggestion[];
   comment: string;
+  mapId?: number;
+  presetName?: string;
 }
 
 export interface ChatMessage {

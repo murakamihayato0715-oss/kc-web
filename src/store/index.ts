@@ -278,6 +278,9 @@ export default new Vuex.Store({
     updateExpeditionWorlds: (state, values: number[]) => {
       state.checkedExpeditionWorlds = values;
     },
+    setCalcManager: (state, value: CalcManager) => {
+      state.calcManager = value;
+    },
   },
   actions: {
     updateSaveData(context, value: SaveData) {
