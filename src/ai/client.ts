@@ -69,8 +69,23 @@ export async function fetchAiText(
       const data = await res.json();
       console.log('[KC-データログ] 📥 Gemini APIレスポンス生データ:', data);
       if (!res.ok) {
-        if (res.status === 429) {
-          console.warn('[KC-エージェント] ⚠️ Gemini APIの利用上限 (429 Too Many Requests) に達しました。リクエスト頻度を抑制します。');
+        if (res.status === 503 || res.status === 429) {
+          console.warn(`[KC-エージェント] ⚠️ Gemini API一時混雑・制限 (${res.status}) を検知。1.5秒後にモデル切替再試行します...`);
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          const fallbackModel = modelName.includes('2.5') ? 'gemini-1.5-flash' : 'gemini-2.5-flash';
+          const fbUrl = `https://generativelanguage.googleapis.com/v1beta/models/${fallbackModel}:generateContent?key=${cleanApiKey}`;
+          const fbRes = await fetch(fbUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents, generationConfig: { maxOutputTokens: 16384, temperature: isJsonMode ? 0.1 : 0.5 } }),
+          });
+          const fbData = await fbRes.json();
+          if (fbRes.ok && fbData.candidates?.[0]) {
+            const fbCandidate = fbData.candidates[0];
+            let fbText = fbCandidate?.content?.parts?.[0]?.text || null;
+            if (fbText) fbText = fbText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+            return { text: fbText, rawData: fbData, finishReason: fbCandidate?.finishReason };
+          }
         }
         console.error('[KC-エージェント] ❌ Gemini API通信エラー:', data);
         return { text: null, rawData: data };
