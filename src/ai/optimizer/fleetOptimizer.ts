@@ -129,14 +129,37 @@ export class FleetOptimizer {
         onStatusUpdate(`第 ${generation} 世代: 検証完了 (到達率:${reach}%, 旗艦撃破率:${sinkRate}%, S勝利率:${win}%, バケツ:${buckets}個)`, suggestion);
       }
 
+      // 戦術アドバイス(レビュー)の自動生成
+      const reviewTactics: string[] = [];
+      if (reach < 60) {
+        if (simResult.battleLogSummary?.includes('対潜') || simResult.highestRetreatNode?.includes('D') || simResult.highestRetreatNode?.includes('B')) {
+          reviewTactics.push('・【戦術レビュー】対潜マスでの事故が大破撤退の主要因です。先制対潜が可能な艦娘やソナー・爆雷装備を導入してください。');
+        } else if (simResult.battleLogSummary?.includes('空襲') || simResult.battleLogSummary?.includes('航空')) {
+          reviewTactics.push('・【戦術レビュー】敵航空攻撃による被害が甚大です。秋月型等の対空カットイン艦や対空電探・高角砲を装備し防空を強化してください。');
+        } else {
+          reviewTactics.push('・【戦術レビュー】水上戦マスでの大破撤退が多発しています。過剰火力よりも命中率（電探・★付き主砲）や守備力（増設バルジ・警戒陣）を重視してください。');
+        }
+      }
+      if (reach >= 40 && sinkRate < 70) {
+        reviewTactics.push('・【戦術レビュー】ボス到達率に対して旗艦撃破率が不足しています。夜戦カットイン（魚雷CI/主魚電CI/夜偵/照明弾）や対地特効装備（三式弾/WG42/士魂隊/内火艇/大発）を増強してください。');
+      }
+      if (buckets >= 4.0) {
+        reviewTactics.push('・【戦術レビュー】修理バケツ消費が多めです。補強増設へのバルジ装着や小口径主砲+電探セットで安定性を高めてください。');
+      }
+
+      const tacticsText = reviewTactics.length > 0 ? reviewTactics.join('\n') : '・【戦術レビュー】バランス良好です。さらなる微調整で勝率極大化を狙ってください。';
+
       currentFeedback = `
-【第 ${generation} 世代のシミュレータ出撃統計レポート】
+【第 ${generation} 世代のシミュレータ出撃統計 ＆ 戦術レビュー分析】
 ・ボス到達率: ${reach}% 
 ・ボス旗艦撃破率: ${sinkRate}%
 ・ボスS勝利率: ${win}%
 ・バケツ平均消費: ${buckets}個
-・最大の壁: 道中は「 ${simResult.highestRetreatNode || '不明'} マス 」での大破撤退が最も多発しています。
-・戦闘ボトルネックの分析: ${simResult.battleLogSummary || '特記なし'}
+・最大の撤退壁: 道中は「 ${simResult.highestRetreatNode || '不明'} マス 」での大破撤退が最多です。
+・戦闘分析: ${simResult.battleLogSummary || '特記なし'}
+
+【改善のための次世代戦術指示】
+${tacticsText}
       `.trim();
     }
 
