@@ -46,7 +46,7 @@ export class FleetOptimizer {
 
       let suggestion: MultiFleetSuggestion | null = null;
       const combinedRequest = `${userRequest}\n\n【第 ${generation} 世代探索フィードバック】\n${currentFeedback}\n(前世代スコア: ${highestScore > 0 ? highestScore : '未評価'}。よりボス到達率・ボス旗艦撃破率が高くなる装備・編成のマイナーチェンジまたは新規アセンブル案を作成してください。)`;
-      suggestion = await suggestFleet(config, combinedRequest, fleetContext, knowledgeContext);
+      suggestion = await suggestFleet(config, combinedRequest, fleetContext, knowledgeContext, 0, adapterContext.itemStocks, adapterContext.items);
 
       if (checkCancelled && checkCancelled()) {
         if (onStatusUpdate) onStatusUpdate('ユーザーによって自律探索が中断されました。');
