@@ -607,7 +607,9 @@ ${compResult.summary}
           if (!shipSuggest || !shipSuggest.name) return;
 
           const cleanedShipName = shipSuggest.name.split('(')[0].trim();
-          const shipMaster = shipMasters.find((s: any) => s && s.name === cleanedShipName);
+          const shipMaster = shipSuggest.shipId
+            ? shipMasters.find((s: any) => s && s.id === shipSuggest.shipId)
+            : shipMasters.find((s: any) => s && s.name === cleanedShipName);
 
           if (shipMaster) {
             const lvMatch = shipSuggest.name.match(/Lv(\d+)/);

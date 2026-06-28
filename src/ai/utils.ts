@@ -15,9 +15,18 @@ const STANDARD_ROUTES: Record<number, string[]> = {
   14: ['A', 'B', 'C', 'D', 'J'], // 1-4
   15: ['A', 'B', 'C', 'D', 'E'], // 1-5
   16: ['A', 'B', 'D', 'E', 'F'], // 1-6
+  25: ['A', 'D', 'E', 'L'], // 2-5
   32: ['C', 'G', 'F', 'L'], // 3-2
+  35: ['B', 'E', 'G', 'K'], // 3-5
+  45: ['H', 'I', 'J', 'K'], // 4-5
   53: ['D', 'I', 'O', 'P', 'Q'], // 5-3
+  54: ['A', 'B', 'C', 'E', 'H'], // 5-4
   55: ['B', 'K', 'P', 'S'], // 5-5
+  61: ['A', 'C', 'D', 'F', 'K'], // 6-1
+  62: ['A', 'B', 'D', 'F', 'I'], // 6-2
+  63: ['A', 'B', 'C', 'E', 'J'], // 6-3
+  64: ['A', 'D', 'C', 'F', 'N'], // 6-4
+  65: ['A', 'C', 'D', 'F', 'G', 'M'], // 6-5
   71: ['D', 'C', 'H', 'K'], // 7-1
   72: ['B', 'C', 'D', 'H', 'I', 'M'], // 7-2
   73: ['A', 'C', 'D', 'G', 'I', 'J', 'M', 'N', 'P'], // 7-3
@@ -32,10 +41,18 @@ export function applyMapAndEnemies(
   enemiesMaster: EnemyMaster[],
   itemMasters: ItemMaster[],
 ): void {
-  const targetNodes = STANDARD_ROUTES[mapId];
-  if (!targetNodes) return;
+  const mapCells = Array.isArray(cells) ? cells.filter((c) => c && c.area === mapId) : [];
+  let targetNodes = STANDARD_ROUTES[mapId];
 
-  const mapCells = cells.filter((c) => c.area === mapId);
+  // 動的フォールバック：定義テーブルにない海域はセルマスターから全ユニークノードを自動抽出
+  if (!targetNodes && mapCells.length > 0) {
+    const nodeSet = new Set<string>();
+    mapCells.forEach((c) => { if (c && c.node) nodeSet.add(c.node); });
+    targetNodes = Array.from(nodeSet);
+  }
+
+  if (!targetNodes || targetNodes.length === 0) return;
+
   const fleets: EnemyFleet[] = [];
 
   targetNodes.forEach((nodeName) => {

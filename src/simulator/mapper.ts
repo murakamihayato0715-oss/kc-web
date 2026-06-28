@@ -277,7 +277,7 @@ export function buildCalcManagerFromSuggestion(
 
     for (let slotIdx = 0; slotIdx < slotLimit; slotIdx += 1) {
       const slotNum = slotIdx + 1;
-      const shipSuggest = shipsArray.find((s) => s && s.slot === slotNum);
+      const shipSuggest = shipsArray.find((s) => s && s.slot === slotNum) || shipsArray[slotIdx];
       if (!shipSuggest || !shipSuggest.name || typeof shipSuggest.name !== 'string') {
         newShips.push(new Ship());
         continue;
