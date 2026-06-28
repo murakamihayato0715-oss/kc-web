@@ -368,10 +368,10 @@
                       <div class="ml-1 body-2 text-right">x {{ detail.catapults }}</div>
                     </div>
                   </div>
-                </div>
-              </v-expansion-panel-content>
-            </v-expansion-panel>
-          </v-expansion-panels>
+            </div>
+         </v-expansion-panel-content>
+      </v-expansion-panel>
+    </v-expansion-panels>
         </div>
         <v-divider />
         <v-card-actions>

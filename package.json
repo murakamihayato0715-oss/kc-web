@@ -8,7 +8,8 @@
     "lint": "vue-cli-service lint",
     "test": "tsx tests/fleetSpecialAttackPartnerHint.test.ts && tsx tests/shipValidation.test.ts && tsx tests/shipCi.test.ts && tsx tests/remodelAdvisor.test.ts && tsx tests/routeMatcher.test.ts && tsx tests/suggestionValidator.test.ts",
     "test:item-bonus": "tsx tests/itemBonus.test.ts",
-    "deploy": "gh-pages -d dist"
+    "deploy": "gh-pages -d dist",
+    "test-ai": "tsx src/index.ts"
   },
   "dependencies": {
     "@google/genai": "^2.9.0",

@@ -549,7 +549,7 @@
                   :type="showAiKey ? 'text' : 'password'"
                   :append-icon="showAiKey ? 'mdi-eye-off' : 'mdi-eye'"
                   @click:append="showAiKey = !showAiKey"
-                  :disabled="aiConfig.provider === 'none' || aiConfig.provider === 'mock'"
+                  :disabled="aiConfig.provider === 'none' || aiConfig.provider === 'mock' || aiConfig.provider === 'ollama'"
                   class="mb-3"
                 />
                 <v-select
@@ -894,9 +894,11 @@ export default Vue.extend({
     aiProviders: [
       { text: '使用しない', value: 'none' },
       { text: 'Google Gemini', value: 'gemini' },
+      { text: 'Ollama (ローカルLLM)', value: 'ollama' },
       { text: 'ローカルデバッグ (無料・モック応答)', value: 'mock' },
     ],
     aiModels: [
+      { text: 'qwen3.5:9b (ローカル長考モデル)', value: 'qwen3.5:9b' },
       { text: 'Gemini 3.5 Flash (最新・超高速)', value: 'gemini-3.5-flash' },
       { text: 'Gemini 2.5 Flash (安定・推奨)', value: 'gemini-2.5-flash' },
       { text: 'Gemini 2.5 Pro (高精度・複雑な思考)', value: 'gemini-2.5-pro' },
@@ -1098,6 +1100,8 @@ export default Vue.extend({
   methods: {
     async saveAiSettings() {
       await saveAiConfig(this.aiConfig);
+      // ★保存完了をアプリケーション全体に通知するイベントを発行
+      this.$root.$emit('ai-config-changed');
       this.inform('AI設定を保存しました。');
     },
     clearAiHistory() {

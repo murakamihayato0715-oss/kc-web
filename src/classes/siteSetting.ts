@@ -178,6 +178,9 @@ export default class SiteSetting {
   /** 潜水艦デコイ大破進撃設定 (true の場合、大破した潜水艦を撤退判定から除外する) */
   public simSubmarineDecoy: boolean;
 
+  /** ボスマス夜戦突入設定 (true の場合、ボスマスで夜戦に突入する) */
+  public simBossNightBattle: boolean;
+
   constructor(setting?: SiteSetting) {
     if (setting) {
       this.id = setting.id;
@@ -234,6 +237,7 @@ export default class SiteSetting {
       this.simBucketHpPercent = setting.simBucketHpPercent !== undefined ? setting.simBucketHpPercent : 0.5;
       this.simBucketTime = setting.simBucketTime !== undefined ? setting.simBucketTime : 5940;
       this.simSubmarineDecoy = setting.simSubmarineDecoy !== undefined ? !!setting.simSubmarineDecoy : false;
+      this.simBossNightBattle = setting.simBossNightBattle !== undefined ? !!setting.simBossNightBattle : true;
 
       if (!setting.planeInitialLevels || !setting.planeInitialLevels.length) {
         this.planeInitialLevels = [
@@ -347,6 +351,7 @@ export default class SiteSetting {
       this.simBucketHpPercent = 0.5;
       this.simBucketTime = 5940;
       this.simSubmarineDecoy = false;
+      this.simBossNightBattle = true;
     }
   }
 }

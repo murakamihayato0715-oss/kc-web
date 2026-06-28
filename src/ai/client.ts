@@ -1,115 +1,228 @@
 /* eslint-disable */
-import { AiConfig, MultiFleetSuggestion, ChatMessage } from './types';
+import { AiConfig, MultiFleetSuggestion, ChatMessage, SimulationResult } from './types';
+import { validateSuggestion, buildValidationMessage } from './suggestionValidator';
 
-// 共通の編成・装備シナジールール
+import ItemStock from '../classes/item/itemStock';
+import ItemMaster from '../classes/item/itemMaster';
+import ShipMaster from '../classes/fleet/shipMaster';
+import ShipStock from '../classes/fleet/shipStock';
+import { matchDestination, checkBranchConditions } from '@/ai/routeMatcher';
+import { mapConfig } from '@/ai/config';
+
 const COMMON_SUGGESTION_RULES = `
-【編成・装備構築の極意ルール】
-1. **海域に応じた適切な隻数と艦種比率の選択（最重要・ルート固定）**:
-   - 常に6隻編成が最適とは限りません。Wiki情報等から海域のルート分岐条件を最優先で確認し、**最適な隻数および指定の艦種比率**で編成を提案してください。
-   - **7-1（ブルネイ泊地沖）の絶対ルール**:
-     - 5隻編成で出撃する場合、逸れを回避してボスへ固定するため、必ず **「軽巡洋艦（または重雷装巡洋艦）1隻 ＋ 駆逐艦4隻」** の比率を絶対に死守してください。
-     - 軽巡洋艦を2隻以上（五十鈴と鬼怒など）入れたり、航空巡洋艦（筑摩など）・重巡洋艦・戦艦・空母などを1隻でも混ぜると、ボスに到達せず手前のCマスで逸れて大破撤退します。絶対に他の艦種を混ぜてはいけません。
-2. **速力強化（高速化・高速+化）のルール**:
-   - ルート分岐条件で「高速+統一」や「高速統一」が要求される場合（例：3-2の高速+最短ルートなど）、AIは必ず各艦娘の速力を引き上げるための装備を正しく配分してください。
-   - **高速+（高速プラス）統一の条件**:
-     - **元々「高速」の艦（多くの駆逐艦、島風、時雨、初霜など）**: 高速から「高速+」に引き上げるには、必ず **「改良型艦本式タービン」と「強化型艦本式缶」（または「新型高温高圧缶」）の2つをセットで装備** する必要があります。タービンと缶のどちらか一方、あるいは両方がない艦は高速のままであり、高速+統一の条件を満たせなくなります。
-     - **元々「低速」の艦（夕張改二特など）**: 低速から「高速+」にするには、さらに多くの装備（例: **「改良型艦本式タービン」 ＋ 「強化型艦本式缶」×2** など）が必要になり、スロットを大きく圧迫します。そのため、高速+統一が条件の海域では低速艦の採用を避けるか、補強増設スロットを最大限活用してください。
-     - 缶やタービンが割り当てられていないのに「高速+統一」と虚偽の解説をして編成を提案することは厳禁です。必ず手持ちのタービン・缶の在庫数を確認し、全員に割り当ててください。
+【アセンブリ構築・自律探索の厳格ルール】
+1. **手持ち装備の完全一致と在庫管理の厳守（最重要・絶対遵守）**:
+   - 提供された「【提督の手持ち情報】」の「【所持装備一覧】」に一字一句違わず書かれている装備名・改修値（★+X）のみを提案に使用してください。リストにない架空の装備を捏造してはいけません。
+   - 各装備の所持個数の制限を超えて、艦隊全体に重複して割り当てることは厳禁です。
+2. **艦娘ごとの標準スロット数の遵守**:
+   - 各艦娘の改造度合いに応じたスロット数を正確に埋め、無駄な空きスロットを作らないでください。
 3. **補強増設（拡張スロット）の厳密な制限**:
-   - **解放有無の確認**: 提供された「【手持ち艦娘】」リストの末尾に「\`[補強増設あり]\`」と明記されている艦娘のみ、装備欄に「\`補強増設: 装備名\`」を指定することができます。\`[補強増設あり]\` の記載がない艦娘に対して、勝手に補強増設スロットに装備を提案してはいけません。
-   - **補強増設に搭載可能な装備の制限**: 補強増設に搭載できる装備はシステム上極めて厳しく制限されています。**主砲、魚雷、甲標的、水上偵察機（紫雲など）、艦上戦闘機/爆撃機、大型電探（21号/32号/33号などの対水上電探）などを補強増設に装備させてはいけません**。補強増設に装備できるのは、原則として手持ちリストにある以下のカテゴリの装備のみです。
-     - 機銃・特殊機銃（例: \`25mm三連装機銃\`、\`Bofors 25mm 4連装機関砲\` など）
-     - 高射装置（例: \`九一式高射装置\`）
-     - 改良型艦本式タービン
-     - 戦闘糧食
-     - 13号対空電探 / 13号対空電探改 などの小型対空電探（※他の大型対水上電探は一切不可）
-     - 増設バルジ（中型/大型）※対応する艦種のみ
-4. **艦娘ごとの標準スロット数の遵守**:
-   - 艦娘の改造度合い（改、改二、改二重など）に応じたスロット数（通常、駆逐艦は3、一部の軽巡や重巡は4、大和改二重・武蔵改二などは5）を正確に把握し、スロット数ピッタリ（無駄な空きを作らない）で装備を提案してください。
-   - **5スロット艦の例**: 大和改二重 (Lv95)、武蔵改二 (Lv94)、夕張改二 / 夕張改二特 / 夕張改二丁 など。これらの艦娘は **5スロット艦** です。必ず5つのスロットすべてに適切な装備を割り当ててください。4つ以下のスロットで終わらせてはいけません。
-5. **対潜先制爆雷攻撃（OASW）と対潜シナジーの最大化**:
-   - 対潜メインのマップ（7-1, 1-5, 7-2等）では、先制対潜攻撃が可能な艦（五十鈴改二や、対潜値100以上の駆逐・軽巡など）を最優先で選出してください。
-   - 対潜艦の装備構成は、中途半端に主砲や魚雷と混ぜず、対潜シナジー（例：「ソナー ＋ 爆雷投射機 ＋ 爆雷」の3種セット、または「ソナー ＋ 爆雷投射機」の2種セット）を最大化する構成に特化させてください。
-   - **電探の排除**: 索敵値でのルート固定チェックに電探が必要であると明記されている海域（例：2-5や一部のEO）を除き、対潜特化艦のスロットを**電探（対水上電探・対空電探）で埋めることは禁止**します。7-1では電探は不要ですので、電探を載せる代わりに「爆雷（二式爆雷や九五式爆雷など）」を載せて3種対潜シナジー（ソナー＋投射機＋爆雷）を構成してください。
-6. **水上戦闘の装備シナジー**:
-   - 装備スロットには役割を持たせ、ちぐはぐな混載（例: 主砲1＋魚雷1＋ソナー1などの無意味な構成）は避けてください。
-   - **昼戦連撃/弾着観測射撃**: 「主砲 × 2 ＋ 水上偵察機」（※偵察機が積める重巡・戦艦・一部の軽巡等のみ）
-   - **夜戦連撃**: 「主砲 × 2」（駆逐艦などの夜戦基本構成）
-   - **夜戦カットイン**: 「魚雷 × 2〜3」（運が高い艦娘向け）
-   - **空母**: 役割（制空用の「艦上戦闘機」、開幕打撃用の「艦上攻撃機/爆撃機」）を明確に配分すること。
- 7. **手持ち装備の完全一致と強装備優先・搭載制限の厳守（最重要）**:
-    - **搭載可否チェックの完全流用**: 提供された「【手持ち艦娘】」の各艦娘データのすぐ下には、プログラムで自動抽出された「\`└装備可能手持ち: 装備1, 装備2, ...\`」および「\`└増設装備可能手持ち: 装備1, ...\`」というリストが記載されています。
-    - **装備の選定ルール**: 各艦娘に割り当てる通常装備は、その艦娘の「\`└装備可能手持ち\`」にリストアップされている装備名から**のみ**選定してください。同様に、補強増設スロットの装備は、その艦娘の「\`└増設装備可能手持ち\`」にリストアップされている装備名から**のみ**選定してください。これらに記載されていない装備を勝手に割り当てることはシステムエラーとなるため、厳禁です。
-    - **駆逐艦への大型ソナー装備禁止**: **「零式水中聴音機」などの大型ソナーは駆逐艦には一切装備できません**。駆逐艦に装備できるソナーは、通常のソナー（「四式水中探信儀」「三式水中探信儀」など）のみです。混同して駆逐艦に大型ソナーを装備させないでください。
-    - **名称の完全一致**: 提供された「【所持装備一覧】」に記載されている名称と**完全に一致する装備名**のみを提案に使用してください。存在しない架空の装備名（例：「三式水中聴音機」など）を捏造したり、文字表記を揺らしてはいけません（「探信儀」を「聴音機」と誤記しないこと）。
-    - **強力な上位装備の優先**: 所持している装備の中から、その役割において**最も性能の高い強力な装備（例：対潜値が高い「四式水中探信儀」や「HF/DF + Type144/147 ASDIC」などの強力なソナー, 爆雷など）を最優先で割り当てて**ください。手持ちに強力な装備があるにもかかわらず、下位装備（九三式水中聴音機など）を優先的に割り当ててはいけません。
-    - **ステータス表示の利用と除去**: 「【所持装備一覧】」の各行には、各装備のステータス情報（例：\`[対潜+15, 回避+2]\`）や所持数（例: \`x 2\`）が記載されています。AIはこのステータス数値（例：\`対潜+15\` など）を元に、最も能力の高い装備を優先的に選定してください。ただし、提案する装備名にはこれらのステータス括弧部分や所持数部分は**絶対に含めないでください**。
-      - 例: リストに「\`HF/DF + Type144/147 ASDIC★+2 [対潜+15] x 1\`」とある場合、提案する装備名は「\`HF/DF + Type144/147 ASDIC★+2\`」とし、\`[対潜+15]\` や \`x 1\` は含めません。
-    - **改修値の引き継ぎ表示**: 装備名を出力する際は、手持ちの「【所持装備一覧】」に書かれている「改修値（例：★+10 や ★+6）」を装備名の末尾に**完全に引き継いで（例: 『三式水中探信儀★+10』や『三式水中探信儀★+6』）**出力してください。改修値が書かれていない（改修なしの）装備については、改修値なしの名称（例: 『三式水中探信儀』）のままで出力してください。
-    - **所持個数の制限と在庫管理の厳守（最重要）**:
-      - リストに書かれている所持数（例：「61cm四連装(酸素)魚雷★+10 x 2」ならその改修値つきのものは最大2個まで）を超えて、同じ装備を艦隊全体に重複して割り当てることは絶対に禁止します。
-      - 1つの艦娘の装備スロットに特定の改修値の装備を割り当てた場合、在庫数を1つ減算して考えてください。在庫数が0になった装備は、他の艦娘（時雨、初霜、満潮など）に重ねて割り当ててはいけません。
-      - 在庫が不足した場合は、別の改修値（例: ★+7 や 改修なし）や、別の装備名から装備を選定してください。同じ希少装備が複数艦にまたがって重複配分されるエラーを防いでください。
- 8. **手持ち艦娘の厳守とレベル表示**:
-    - 提供された「【手持ち艦娘】」に存在する艦娘のみを編成してください。
-    - **艦娘名とレベルの出力**: 提案する艦娘名は、手持ち情報に記載されているレベルを付記した **「艦娘名 (LvXX)」**（例: \`五十鈴改二 (Lv85)\`、\`時雨改三 (Lv77)\`）の形式で出力してください。
- 9. **スロット制限の厳守**:
-    - 各艦娘のデータ直下に「\`└スロット制限\`」が明記されている場合（例: 「\`能代改二/矢矧改二 4スロットに魚雷系不可\`」や「\`伊勢改二/日向改二 3,4,5スロットに主砲系不可\`」など）、指定されたスロット番号（1始まり）には絶対に該当する装備を割り当てないでください。
- 10. **特殊攻撃（タッチ攻撃）の最大活用**:
-    - 「【特殊攻撃（タッチ攻撃）の編成可能候補】」に候補が記載されている場合、高難易度海域（例：5-5など）では、その組み合わせに適合する艦娘を正しいスロット順（例: 大和タッチなら1番艦大和、2番艦武蔵など）に配置して編成を提案し、解説でも積極的に言及してください。
+   - 手持ち艦娘リストの末尾に \`[補強増設あり]\` と明記されている艦娘のみ、装備欄に「補強増設: 装備名」を指定できます。
+   - 補強増設に主砲、魚雷、甲標的、水上偵察機などを装備させることは禁止します。機銃、高射装置、タービン、戦闘糧食、小型対空電探のみを割り当ててください。
+4. **人間の固定観念の完全排除（自由な発想による勝率の最大化）**:
+   - 人間の一般的なセオリーに囚われる必要は一切ありません。シミュレータの数値が上がるのであれば、合理的なアセンブルを大歓迎します。
 `;
+
+async function fetchAiText(
+  config: AiConfig,
+  messages: Array<{ role: string; content: string }>,
+  isJsonMode = false,
+): Promise<{ text: string | null; rawData: any; finishReason?: string }> {
+  const provider = config.provider || 'ollama';
+  const modelName = config.model || (provider === 'gemini' ? 'gemini-2.5-flash' : 'qwen3.5:9b-long');
+
+  console.log('[KC-データログ] 📤 AI送信メッセージ・プロンプト:', messages);
+
+  try {
+    if (provider === 'gemini') {
+      if (!config.apiKey || !config.apiKey.trim()) {
+        console.warn('[KC-エージェント] ⚠️ Gemini APIが選択されていますが、API Keyが空です。「⚙️ AI設定」からキーを入力してください。');
+        return { text: null, rawData: { error: 'Gemini API Keyが未設定です。「⚙️ AI設定」画面からAPI Keyを入力・保存してください。' } };
+      }
+
+      console.log(`[KC-データログ] 🚀 Gemini APIへ通信開始 (モデル: ${modelName})`);
+      const cleanApiKey = config.apiKey.trim();
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${cleanApiKey}`;
+      const contents = messages.map((m) => ({
+        role: m.role === 'user' || m.role === 'system' ? 'user' : 'model',
+        parts: [{ text: m.content }],
+      }));
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents,
+          generationConfig: {
+            maxOutputTokens: 16384,
+            temperature: isJsonMode ? 0.1 : 0.5,
+          },
+        }),
+      });
+      const data = await res.json();
+      console.log('[KC-データログ] 📥 Gemini APIレスポンス生データ:', data);
+      if (!res.ok) {
+        if (res.status === 429) {
+          console.warn('[KC-エージェント] ⚠️ Gemini APIの利用上限 (429 Too Many Requests) に達しました。リクエスト頻度を抑制します。');
+        }
+        console.error('[KC-エージェント] ❌ Gemini API通信エラー:', data);
+        return { text: null, rawData: data };
+      }
+      const candidate = data.candidates?.[0];
+      const finishReason = candidate?.finishReason;
+      if (finishReason === 'MAX_TOKENS' || finishReason === 'LENGTH') {
+        console.warn('[KC-エージェント] ⚠️ AIの回答がトークン制限(max_tokens)により途中で強制切断・未完了となりました。');
+      }
+      let text = candidate?.content?.parts?.[0]?.text || null;
+      if (text) {
+        text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+      }
+      return { text, rawData: data, finishReason };
+    } else {
+      // Ollama Native / OpenAI Compatible API
+      // 1. まず OpenAI 互換エンドポイントを試す
+      const body: any = {
+        model: modelName,
+        messages,
+        temperature: isJsonMode ? 0.1 : 0.5,
+        max_tokens: 16384,
+        options: {
+          num_predict: 16384,
+          num_ctx: 32768,
+          temperature: isJsonMode ? 0.1 : 0.5,
+        },
+      };
+      if (isJsonMode) {
+        body.response_format = { type: 'json_object' };
+      }
+
+      let res = await fetch('http://localhost:11434/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      let data = await res.json();
+      console.log('[KC-データログ] 📥 Ollama/OpenAI APIレスポンス生データ:', data);
+
+      let choice = data.choices?.[0];
+      let finishReason = choice?.finish_reason || data.finish_reason;
+      let text = choice?.message?.content ||
+                 data.message?.content ||
+                 data.response ||
+                 data.content ||
+                 data.text || null;
+
+      // もし思考モデルで content が空、または finish_reason が length だった場合、Ollama Native /api/chat で直接フォールバック
+      if (!text || finishReason === 'length') {
+        console.warn('[KC-エージェント] /v1/chat/completionsで応答が空またはトークン制限に達したため、Ollama Native API (/api/chat) で再試行します...');
+        const nativeBody = {
+          model: modelName,
+          messages: messages.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+          stream: false,
+          options: {
+            num_predict: 16384,
+            temperature: isJsonMode ? 0.1 : 0.5,
+          },
+        };
+        const nativeRes = await fetch('http://localhost:11434/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(nativeBody),
+        });
+        if (nativeRes.ok) {
+          const nativeData = await nativeRes.json();
+          console.log('[KC-データログ] 📥 Ollama Native API (/api/chat) レスポンス生データ:', nativeData);
+          data = nativeData;
+          text = nativeData.message?.content || nativeData.message?.reasoning || nativeData.message?.thinking || nativeData.response || null;
+          finishReason = nativeData.done_reason || (nativeData.done ? 'stop' : 'length');
+        }
+      }
+
+      if (finishReason === 'length') {
+        console.warn('[KC-エージェント] ⚠️ AIの回答がトークン制限(max_tokens)により途中で強制切断・未完了となりました。');
+      }
+
+      if (text) {
+        text = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
+        text = text.replace(/<think>[\s\S]*/gi, '').trim();
+      }
+
+      return { text, rawData: data, finishReason };
+    }
+  } catch (err) {
+    console.error('[KC-エージェント] API通信例外エラー:', err);
+    return { text: null, rawData: { exception: String(err) } };
+  }
+}
+
+function parseAndRepairJson(text: string): any {
+  let cleaned = text.trim();
+  // 思考タグの削ぎ落とし
+  cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+  if (cleaned.startsWith('```json')) {
+    cleaned = cleaned.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
+  } else if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/^```\s*/, '').replace(/\s*```$/, '').trim();
+  }
+
+  const firstBrace = cleaned.indexOf('{');
+  if (firstBrace !== -1) {
+    cleaned = cleaned.substring(firstBrace);
+  }
+
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {
+    // ブラケット/カッコの修復を試みる
+    let repaired = cleaned;
+    const lastBrace = repaired.lastIndexOf('}');
+    if (lastBrace !== -1 && lastBrace < repaired.length - 1) {
+      repaired = repaired.substring(0, lastBrace + 1);
+    }
+    const openBraces = (repaired.match(/\{/g) || []).length;
+    const closeBraces = (repaired.match(/\}/g) || []).length;
+    const openBrackets = (repaired.match(/\[/g) || []).length;
+    const closeBrackets = (repaired.match(/\]/g) || []).length;
+
+    for (let i = 0; i < openBrackets - closeBrackets; i += 1) repaired += ']';
+    for (let i = 0; i < openBraces - closeBraces; i += 1) repaired += '}';
+
+    try {
+      return JSON.parse(repaired);
+    } catch (e2) {
+      return null;
+    }
+  }
+}
 
 export async function suggestFleet(
   config: AiConfig,
   userRequest: string,
   fleetContext = '',
   knowledgeContext = '',
+  retryCount = 0,
 ): Promise<MultiFleetSuggestion | null> {
-  if (config.provider === 'none' || !config.apiKey) return null;
+  const prompt = `【絶対厳守ルール】思考プロセス（Thinking Process）、挨拶、前置き、Markdownのコードブロック記法（\`\`\`json ... \`\`\`）は一切出力しないでください。1文字目から純粋なJSONオブジェクト（{）のみを出力し、最後まで完全なJSONとして完結させてください。
 
-  const prompt = `前置きや挨拶は一切使わずに、質問に対する直接的な解説やデータ、技術的な対策のみを出力してください。
-以下のゲーム知識および【編成・装備構築の極意ルール】を前提として編成を提案してください。
-
-【基本知識】
-- 「提督、お疲れ様です！」や「提督、〜」などの挨拶や余計な前置きは一切行わず、直接解説やMarkdownテーブルから入ること。
-- 高速+編成とはタービン・缶で速力を高速+にした艦で統一する編成
-- 制空権確保には敵制空値の3倍以上の制空値が必要
-- 基地航空隊は最大3部隊まで出撃可能
-- 夜戦カットインには魚雷・主砲の組み合わせが重要
-- 対潜には爆雷・ソナーの装備が必要
-- 支援艦隊には駆逐2隻以上が必要
-- 戦艦・重巡に艦上戦闘機・艦上攻撃機・艦上爆撃機は装備不可
-- 空母に魚雷・主砲は装備不可
-- 駆逐艦に大口径主砲は装備不可
-- <route_threats> に道中の敵情報が提供されている場合、敵艦名や「[属性: 先制雷撃あり]」「[属性: 強力対空]」「[属性: 陸上型]」などの属性フラグ、および「【警告：現在の艦隊構成によるルート逸れ・分岐条件違反】」の情報を必ず考慮して対策を講じてください。
-  ・「属性: 強力対空」の敵がいる場合：撃墜回避性能の高い艦載機や、対空カットイン（対空CI）装備の提案を考慮すること。
-  ・「属性: 先制雷撃あり」または「属性: 潜水艦」の敵がいる場合：先制対潜攻撃（OASW）や、先制での撃破率・生存率を高める戦術を考慮すること。
-  ・「属性: 陸上型」の敵がいる場合：三式弾、大発動艇（八九式中戦車＆陸戦隊）、特二式内火艇などの対地特効装備を必ずアセンブルに含めること。
+以下のゲーム仕様および【アセンブリ構築・自律探索の厳格ルール】を前提として、最高の勝率を叩き出すための編成・装備を提案してください。
 
 ${COMMON_SUGGESTION_RULES}
 
 ${knowledgeContext ? `${knowledgeContext}\n` : ''}
-${fleetContext ? `【提督の手持ち情報】
-${fleetContext}
-
-【絶対に守るべきルール】
-- 手持ちリストに存在する艦娘・装備のみ使用すること
-- リストにない艦娘・装備は絶対に使用しないこと
-- 各艦娘の装備可能カテゴリに従った装備のみ使用すること
-- ユーザーが指定した練度・隻数・条件を必ず守ること` : ''}
+${fleetContext ? `【提督の手持ち情報と現在編成】\n${fleetContext}\n` : ''}
 
 リクエスト: ${userRequest}
 
-以下のJSON形式のみで返答してください。説明文や前置きは一切不要です。JSONのみを返してください。
-海域や編成条件に応じて、編成する隻数を1〜6隻の間で動的に決定してください（例：7-1なら5隻編成）。
-
+【返却 JSON フォーマット（JSON以外のテキスト出力厳禁）】
 {
   "fleets": [
     {
       "ships": [
-        { "name": "艦娘名 (LvXX)", "slot": 1, "equipments": ["装備名★+X", "装備名★+Y"] },
-        { "name": "艦娘名 (LvXX)", "slot": 2, "equipments": ["装備名★+X", "装備名"] }
-        // slot番号は1から開始し、2番艦以降は必ず 2, 3, 4, 5, 6 と連番にしてください。すべてを1にしてはいけません。
+        { "name": "艦娘名 (LvXX)", "slot": 1, "equipments": ["装備名★+X", "装備名★+Y"] }
       ],
       "comment": "この編成の解説"
     }
@@ -117,158 +230,315 @@ ${fleetContext}
   "comment": "全体的な解説を100文字以内で"
 }`;
 
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: 'application/json' },
-      }),
-    },
-  );
-
-  const data = await res.json();
-  if (!res.ok) {
-    console.error('Gemini API Error:', data);
-    throw new Error(data.error?.message || `API Error (Status: ${res.status})`);
-  }
-
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) return null;
-
   try {
-    const cleaned = text.replace(/```json|```/g, '').trim();
-    return JSON.parse(cleaned) as MultiFleetSuggestion;
-  } catch {
+    const { text, rawData, finishReason } = await fetchAiText(config, [{ role: 'user', content: prompt }], true);
+    if (!text) {
+      console.warn('[KC-エージェント] suggestFleet: AI応答テキストが空でした。');
+      if (retryCount < 1) {
+        console.warn('[KC-エージェント] 🔄 自動リトライを実行します (試行 2/2)...');
+        return suggestFleet(config, `${userRequest}\n※前回の出力が空でした。思考を即座にスキップし1文字目から純粋なJSONのみを出力してください。`, fleetContext, knowledgeContext, retryCount + 1);
+      }
+      return null;
+    }
+
+    const parsed = parseAndRepairJson(text);
+    if (parsed && typeof parsed === 'object' && parsed.fleets) {
+      console.log('[KC-データログ] 💡 AI提案編成(パース/修復成功):', parsed);
+      return parsed as MultiFleetSuggestion;
+    }
+
+    console.warn('[KC-エージェント] suggestFleet: JSONパース/修復に失敗しました。');
+    if (retryCount < 1) {
+      console.warn('[KC-エージェント] 🔄 自動リトライを実行します (試行 2/2)...');
+      return suggestFleet(config, `${userRequest}\n※前回の出力が途切れました。思考プロセスや解説テキストを一切出力せず、1文字目から純粋なJSONのみを出力してください。`, fleetContext, knowledgeContext, retryCount + 1);
+    }
+
+    return null;
+  } catch (err) {
+    console.error('Local Ollama Connection Error in suggestFleet:', err);
     return null;
   }
 }
+
+export async function suggestAndOptimizeFleet(
+  config: AiConfig,
+  userRequest: string,
+  setting: any,
+  fleetContext: string,
+  knowledgeContext: string,
+  itemStocks: ItemStock[],
+  itemMasters: ItemMaster[],
+  shipMasters: ShipMaster[],
+  shipStocks: ShipStock[],
+  runSimulationFn: (suggestion: MultiFleetSuggestion) => Promise<SimulationResult>,
+  onStatusUpdate?: (msg: string, suggestion?: MultiFleetSuggestion) => void,
+  checkCancelled?: () => boolean,
+): Promise<MultiFleetSuggestion | null> {
+
+  let currentFeedback = 'これは第1世代（初期試行）です。手持ち情報から自由にアセンブルを組み立ててください。';
+  let bestSuggestion: MultiFleetSuggestion | null = null;
+  let highestScore = -1;
+  let consecutiveFailures = 0;
+  const MAX_GENERATIONS = 8;
+
+  try {
+    for (let generation = 1; generation <= MAX_GENERATIONS; generation++) {
+      // 1. 中断機能の判定
+      if (checkCancelled && checkCancelled()) {
+        console.log('[KC-エージェント] ユーザーによって探索が中断されました。');
+        if (onStatusUpdate) onStatusUpdate('ユーザーによって自律探索が中断されました。');
+        break;
+      }
+
+      console.log(`[KC-エージェント] 第 ${generation} 世代の最適化探索を開始します...`);
+      if (onStatusUpdate) onStatusUpdate(`第 ${generation} 世代の最適化提案を生成中...`);
+
+      const combinedRequest = `${userRequest}\n\n【シミュレータからのフィードバック（前世代のファクトデータ）】\n${currentFeedback}`;
+      const suggestion = await suggestFleet(config, combinedRequest, fleetContext, knowledgeContext);
+
+      // 中断再確認
+      if (checkCancelled && checkCancelled()) {
+        if (onStatusUpdate) onStatusUpdate('ユーザーによって自律探索が中断されました。');
+        break;
+      }
+
+      // 3. 安全装置（セーフティ）：連続3回失敗で自動停止
+      if (!suggestion) {
+        consecutiveFailures += 1;
+        console.warn(`[KC-エージェント] 第 ${generation} 世代の提案生成に失敗しました (${consecutiveFailures}/3回)`);
+        if (onStatusUpdate) onStatusUpdate(`第 ${generation} 世代: AIによる提案生成に失敗しました (${consecutiveFailures}/3)`);
+
+        if (consecutiveFailures >= 3) {
+          console.error('[KC-エージェント] AI提案生成が3回連続で失敗したため、安全装置により探索を停止します。');
+          if (onStatusUpdate) onStatusUpdate('⚠️ AIの提案生成失敗が3回連続したため、安全装置により探索を自動停止しました。');
+          break;
+        }
+
+        currentFeedback = '前世代の提案生成に失敗しました。アセンブルルールを守って正確なJSONを出力してください。';
+        continue;
+      }
+
+      // 成功したら失敗カウントをリセット
+      consecutiveFailures = 0;
+
+      const dest = matchDestination(mapConfig, userRequest); // 海域設定を取得
+      if (dest) {
+         const branchErrors = checkBranchConditions(dest, suggestion);
+         if (branchErrors.length > 0) {
+           console.warn(`[KC-エージェント] 第 ${generation} 世代: ルート不一致エラー (${branchErrors.join(', ')})`);
+           if (onStatusUpdate) onStatusUpdate(`第 ${generation} 世代: ルート条件不一致 (${branchErrors.join(', ')})`, suggestion);
+           currentFeedback = `【ルート不一致エラー】提案された編成はルート条件を満たしていません: ${branchErrors.join(', ')}。編成を修正してください。`;
+           continue; // AIに失敗を伝えて次の生成へ
+         }
+      }
+
+      const validation = validateSuggestion(
+        suggestion, 
+        itemStocks, 
+        itemMasters, 
+        shipMasters, 
+        shipStocks
+      );
+      if (!validation.isValid) {
+         const errMsg = buildValidationMessage(validation);
+         console.warn(`[KC-エージェント] 第 ${generation} 世代: 在庫エラー (${errMsg})`);
+         if (onStatusUpdate) onStatusUpdate(`第 ${generation} 世代: 所持制限不一致 (${errMsg})`, suggestion);
+         currentFeedback = `【在庫エラー】${errMsg}`;
+         continue;
+      }
+
+      if (checkCancelled && checkCancelled()) {
+        if (onStatusUpdate) onStatusUpdate('ユーザーによって自律探索が中断されました。');
+        break;
+      }
+
+      if (onStatusUpdate) onStatusUpdate(`第 ${generation} 世代: シミュレーション検証中 (5000回)...`, suggestion);
+      const simResult = await runSimulationFn(suggestion);
+      console.log(`[デバッグ] 世代${generation}のシミュレーション結果詳細:`, JSON.stringify(simResult, null, 2));
+
+      const reach = simResult.bossReachRate ?? 0;
+      const win = simResult.bossSWinRate ?? 0;
+      const fitnessScore = reach * win;
+
+      console.log(`[デバッグ] 世代${generation} 計算スコア: ${fitnessScore} (到達率:${reach}% * 勝率:${win}%)`);
+
+      if (fitnessScore > highestScore) {
+        highestScore = fitnessScore;
+        bestSuggestion = suggestion;
+        console.log(`[デバッグ] ベスト編成を更新しました！世代:${generation}, 新最高スコア: ${highestScore}`);
+        if (onStatusUpdate) onStatusUpdate(`★ 第 ${generation} 世代: ベスト編成更新！(到達率:${reach}%, S勝利率:${win}%)`, suggestion);
+      } else {
+        console.log(`[デバッグ] ベスト更新なし (現在の最高スコア: ${highestScore})`);
+        if (onStatusUpdate) onStatusUpdate(`第 ${generation} 世代: 検証完了 (到達率:${reach}%, S勝利率:${win}%)`, suggestion);
+      }
+
+      if (simResult.bossSWinRate >= 85) {
+        console.log('[KC-エージェント] 目標勝率を達成したため、早期正常終了します。');
+        if (onStatusUpdate) onStatusUpdate('🎯 目標勝率(85%以上)を達成したため、探索を正常終了します。');
+        break;
+      }
+
+      currentFeedback = `
+【第 ${generation} 世代のシミュレータ出撃統計レポート】
+・ボス到達率: ${simResult.bossReachRate}% 
+・ボスS勝利率: ${simResult.bossSWinRate}%
+・最大の壁: 道中は「 ${simResult.highestRetreatNode} マス 」での大破撤退が最も多発しています。
+・戦闘ボトルネックの分析: ${simResult.battleLogSummary}
+      `.trim();
+    }
+  } catch (error) {
+    console.error('[KC-エージェント] ループ実行中に例外エラーが発生しました:', error);
+    if (onStatusUpdate) onStatusUpdate(`探索ループ中にエラーが発生しました: ${error}`);
+  }
+
+  return bestSuggestion;
+}
+
+// 📄 src/ai/client.ts (最下部の chatWithAi 関数を以下に差し替え)
+
+// 📄 src/ai/client.ts (最下部の chatWithAi 関数を以下に差し替え)
 
 export async function chatWithAi(
   config: AiConfig,
   chatHistory: ChatMessage[],
   fleetContext = '',
   knowledgeContext = '',
+  mode = 'fleet',
 ): Promise<ChatMessage | null> {
-  if (config.provider === 'none' || !config.apiKey) return null;
+  const modelName = config.model || 'qwen3.5:9b-long';
 
-  const systemInstructionText = `前置きや挨拶は一切使わずに、質問に対する直接的な解説やデータ、技術的な対策のみを出力してください。
-ユーザーからの質問や編成相談に対して、親身になって回答してください。
-回答には、一般的なテキスト回答（マークダウン形式）と、必要に応じて具体的な編成提案（スロットごとの艦娘名と装備一覧）を含めることができます。
+  let modeInstruction = '';
+  switch (mode) {
+    case 'chat':
+      modeInstruction = '【現在の指示モード: 攻略解説（通常の会話）】\n提督からの質問や相談に対して、JSON構造体は絶対に出力せず、通常のテキスト（マークダウン形式）で詳細かつ分かりやすく回答してください。"suggestion" オブジェクトは含めないでください。';
+      break;
+    case 'equip':
+      modeInstruction = '【現在の指示モード: 装備換装】\n艦娘の装備換装・最適配置を中心に提案してください。必ず返却JSONフォーマットに従い、指定された "suggestion" オブジェクトを含んだJSONを出力してください。';
+      break;
+    case 'map':
+      modeInstruction = '【現在の指示モード: 海域選定・フルアセンブル】\n攻略目的に適した海域の選定および最適な艦娘・装備の選定を行ってください。必ず返却JSONフォーマットに従い、指定された "suggestion" オブジェクトを含んだJSONを出力してください。';
+      break;
+    case 'adjust':
+      modeInstruction = '【現在の指示モード: 編成修正・微調整】\n現在の編成の弱点を補う微調整提案を行ってください。必ず返却JSONフォーマットに従い、指定された "suggestion" オブジェクトを含んだJSONを出力してください。';
+      break;
+    case 'fleet':
+    default:
+      modeInstruction = '【現在の指示モード: 新規編成構築】\n海域や目的に合わせた最適な艦娘選定と装備配置を提案してください。必ず返却JSONフォーマットに従い、指定された "suggestion" オブジェクトを含んだJSONを出力してください。';
+      break;
+  }
 
-【基本知識】
-- 「提督、お疲れ様です！」や「提督、〜」などの挨拶や余計な前置きは一切行わず、直接解説やMarkdownテーブルから入ること。
-- 高速+編成とはタービン・缶で速力を高速+にした艦で統一する編成
-- 制空権確保には敵制空値の3倍以上の制空値が必要
-- 基地航空隊は最大3部隊まで出撃可能
-- 夜戦カットインには魚雷・主砲の組み合わせが重要
-- 対潜には爆雷・ソナーの装備が必要
-- 支援艦隊には駆逐2隻以上が必要
-- 戦艦・重巡に艦上戦闘機・艦上攻撃機・艦上爆撃機は装備不可
-- 空母に魚雷・主砲は装備不可
-- 駆逐艦に大口径主砲は装備不可
-- <route_threats> に道中の敵情報が提供されている場合、敵艦名や「[属性: 先制雷撃あり]」「[属性: 強力対空]」「[属性: 陸上型]」などの属性フラグ、および「【警告：現在の艦隊構成によるルート逸れ・分岐条件違反】」の情報を必ず考慮して対策を講じてください。
-  ・「属性: 強力対空」の敵がいる場合：撃墜回避性能の高い艦載機や、対空カットイン（対空CI）装備の提案を考慮すること。
-  ・「属性: 先制雷撃あり」または「属性: 潜水艦」の敵がいる場合：先制対潜攻撃（OASW）や、先制での撃破率・生存率を高める戦術を考慮すること。
-  ・「属性: 陸上型」の敵がいる場合：三式弾、大発動艇（八九式中戦車＆陸戦隊）、特二式内火艇などの対地特効装備を必ずアセンブルに含めること。
+  const systemInstructionText = `以下のゲーム仕様および【アセンブリ構築・自律探索の厳格ルール】を前提として回答してください。
 
-${COMMON_SUGGESTION_RULES}
+${modeInstruction}
 
-${knowledgeContext ? `${knowledgeContext}\n` : ''}
-${fleetContext ? `【提督の手持ち情報と現在編成】
-${fleetContext}
+【言語および出力制限の絶対ルール】
+・思考プロセス（Thinking Process）や英語の状況分析テキスト（例: "The user is asking..." や "<think>" など）は一切出力しないでください。1文字目から必ず日本語のみで回答してください。
 
-【絶対に守るべきルール】
-- 手持ちリストに存在する艦娘・装備のみ使用すること
-- リストにない艦娘・装備は絶対に使用しないこと
-- 各艦娘の装備可能カテゴリに従った装備のみ使用すること
-- ユーザーが指定した練度・隻数・条件を必ず守ること` : ''}
+【知識・質問対応の補足ルール】
+・ユーザーからゲーム内の一般的な知識（例：ドイツ艦のリスト、仕様の解説、歴史的背景など）について質問された場合は、手持ち情報データに限定されず、艦これの一般的な知識・データに基づいて柔軟かつ丁寧に回答してください。
+・【所持装備一覧】や【手持ち艦娘】の制限ルールは、具体的な「実出撃用の艦隊編成・アセンブリ構築」を提案・計算する際にのみ厳密に適用してください。
 
-以下のJSONスキーマに従って、常にJSON形式でのみ回答してください。前置きや解説テキストをマークダウンの外側に書いてはいけません。必ずJSON全体を1つ返してください。
-編成を提案する場合は、海域や編成条件に応じて隻数（1〜6隻、遊撃部隊は7隻）を動的に決定してください。
+【アセンブリ構築・スロット配置の厳格ルール】
+・5スロット艦娘（大和改二重、武蔵改二、伊勢改二等）は、必ず全5スロットに適切な装備（主砲、徹甲弾、電探、水上機、副砲等）を漏れなく充填してください。
+・補強増設スロット（補強増設あり）を持つ艦娘には、必ず タービン、ボイラー、一式徹甲弾改、水雷戦隊 熟練見張員、機銃、電探 など「その艦娘が補強増設枠に装備可能なアイテム」のみを100%割り振ってください。補強増設に装備不可能な主砲や水上機等を補強増設枠に配置することは固く禁止します。
+・海域攻略（特に5-5等）では、ボスマス到達に必要な33式索敵値（水上電探、水上偵察機、彩雲等）を必ず十分に確保した装備構成にしてください。
+・戦闘糧食、秋刀魚の缶詰、応急修理要員、応急修理女神などの「消費アイテム」は、提督から明示的な指示がない限り、原則としてアセンブリへの配置を自重してください。
+・イベント海域における「出撃札（札）」は、【改R4計画艦隊】や【ナルヴィク防衛主隊】のようにイベントごとに固有の名称が付きます。提督から特定の札名や海域ごとの札温存・再利用に関する指示（例:「第一海域の札がついた艦を優先」「主力を温存」）があった場合は、手持ち艦娘の出撃札タグを参照して柔軟かつ最適な編成を提案してください。
 
+※出力文字数制限によるJSONの途切れを防ぐため、JSON出力時の「message」や「comment」の解説テキストは簡潔（200文字以内）にまとめてください。
+
+【編成提案時の返却 JSON フォーマット（デッキビルダー形式準拠・ハルシネーション完全防止）】
 {
-  "message": "提督へのチャットでの回答メッセージ（マークダウン形式。編成のポイントや回答文をここに記述してください。回答メッセージの中には、必ず「敵ボス基準値」と「提案編成の予測値」を比較したMarkdownテーブルを掲載してください）",
+  "message": "提督へのチャットでの回答メッセージ（マークダウン形式、編成の意図や理由を簡潔に記述）",
   "suggestion": {
+    "mapId": null,
     "fleets": [
       {
         "ships": [
-          { "name": "艦娘名 (LvXX)", "slot": 1, "equipments": ["装備名★+X", "装備名★+Y"] },
-          { "name": "艦娘名 (LvXX)", "slot": 2, "equipments": ["装備名★+X", "装備名"] }
-          // slot番号は1から開始し、必ず 1, 2, 3, 4, 5, 6, 7 と順に連番にしてください。すべてを1にしてはいけません。
+          { "name": "大和改二重(Lv95)", "slot": 1, "equipments": ["試製51cm連装砲★+3", "46cm三連装砲改二★+0", "試製15cm9連装高角砲★+0", "紫雲改(熟練)★+0", "15m二重測距儀+21号電探改二★+6", "補強増設: 15m二重測距儀+21号電探改二★+0"] }
         ],
         "comment": "この編成の解説"
       }
     ],
-    "airbases": [
-      {
-        "index": 0,
-        "mode": 1,
-        "items": ["一式陸攻★+0", "零式艦戦52型★+10"]
-        // index: 0(第一基地), 1(第二基地), 2(第三基地)。mode: 1(出撃), 2(防空), 0(待機)。
-      }
-    ],
     "comment": "全体的な解説"
   }
-}`;
+}
+※指示された海域がある場合（5-5なら55、7-1なら71）は mapId を数値に変更してください。装備名には必ず手持ち装備一覧に存在する正確な名称と改修値（★+N）を記述してください。`;
 
-  const contents = chatHistory.map((msg) => {
-    if (msg.role === 'user') {
-      return {
-        role: 'user',
-        parts: [{ text: msg.message }],
-      };
-    } else {
-      return {
-        role: 'model',
-        parts: [
-          {
-            text: JSON.stringify({
-              message: msg.message,
-              suggestion: msg.suggestion,
-            }),
-          },
-        ],
-      };
-    }
-  });
+  const messages = chatHistory.map((msg) => ({
+    role: msg.role === 'user' ? 'user' : 'assistant',
+    content: msg.role === 'user' ? msg.message : JSON.stringify({ message: msg.message, suggestion: msg.suggestion })
+  }));
 
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents,
-        systemInstruction: {
-          parts: [{ text: systemInstructionText }]
-        },
-        generationConfig: { responseMimeType: 'application/json' },
-      }),
-    },
-  );
-
-  const data = await res.json();
-  if (!res.ok) {
-    console.error('Gemini API Error:', data);
-    return null;
+  messages.unshift({ role: 'system', content: systemInstructionText });
+  
+  if (fleetContext || knowledgeContext) {
+    const contextText = `【提督の手持ち情報と現在編成】\n${fleetContext}\n\n【知識ベース】\n${knowledgeContext}`;
+    messages.unshift({ role: 'system', content: contextText });
   }
 
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) return null;
-
   try {
-    const cleaned = text.replace(/```json|```/g, '').trim();
-    const parsed = JSON.parse(cleaned);
+    const { text, rawData } = await fetchAiText(config, messages, false);
+    if (!text) {
+      console.warn('[KC-エージェント] chatWithAi: AI応答テキストが空でした。受信用構造:', rawData);
+      const errInfo = rawData ? JSON.stringify(rawData, null, 2) : 'データなし';
+      return {
+        role: 'model',
+        message: `⚠️ AIからの回答テキストが空でした。\n\n【デバッグ用レスポンスデータ】\n\`\`\`json\n${errInfo}\n\`\`\``,
+        suggestion: undefined,
+      };
+    }
+
+    let cleaned = text.trim();
+    // 思考タグや英語のメタテキストを排除
+    cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    cleaned = cleaned.replace(/<think>[\s\S]*/gi, '').trim();
+
+    if (cleaned.startsWith('```json')) {
+      cleaned = cleaned.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
+    } else if (cleaned.startsWith('```')) {
+      cleaned = cleaned.replace(/^```\s*/, '').replace(/\s*```$/, '').trim();
+    }
+
+    // テキスト内に { と } が含まれているか判定し、JSON部分の抽出を試みる
+    const firstBrace = cleaned.indexOf('{');
+    const lastBrace = cleaned.lastIndexOf('}');
+
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      const jsonCandidate = cleaned.substring(firstBrace, lastBrace + 1);
+      try {
+        const parsed = JSON.parse(jsonCandidate);
+        if (parsed && typeof parsed === 'object' && (parsed.message !== undefined || parsed.suggestion !== undefined)) {
+          return {
+            role: 'model',
+            message: parsed.message !== undefined ? parsed.message : cleaned.substring(0, firstBrace).trim() || '編成案を提示します。',
+            suggestion: parsed.suggestion || undefined,
+          };
+        }
+      } catch (parseErr) {
+        console.warn('[KC-エージェント] 抽出したJSONのパースに失敗したため、テキストメッセージとして処理します:', parseErr);
+      }
+    }
+
+    // 英語の思考テキストで始まっている場合は、純粋なメッセージ部分を抽出
+    if (cleaned.startsWith('The user is asking') || cleaned.startsWith('This matches')) {
+      const lineBreak = cleaned.indexOf('\n\n');
+      if (lineBreak !== -1) {
+        cleaned = cleaned.substring(lineBreak).trim();
+      }
+    }
+
     return {
       role: 'model',
-      message: parsed.message || '',
-      suggestion: parsed.suggestion || undefined,
+      message: cleaned,
+      suggestion: undefined,
     };
   } catch (err) {
-    console.error('JSON parse error:', err, text);
-    return null;
+    console.error('Ollama Chat Error:', err);
+    return {
+      role: 'model',
+      message: `AIとの通信中に例外エラーが発生しました: ${err}`,
+      suggestion: undefined,
+    };
   }
 }

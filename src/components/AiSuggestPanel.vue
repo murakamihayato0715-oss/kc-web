@@ -1,6 +1,5 @@
 <template>
   <v-card class="general-container my-2 pa-3" v-if="visible">
-    <!-- ヘッダー -->
     <div class="d-flex align-center mb-2">
       <span class="font-weight-bold">AI提督チャット</span>
       <v-spacer />
@@ -21,7 +20,6 @@
     </div>
     <v-divider class="mb-2" />
 
-    <!-- 未設定時 -->
     <div v-if="!hasApiKey">
       <v-alert type="warning" dense class="mb-0">
         APIキーが未設定です。
@@ -29,9 +27,7 @@
       </v-alert>
     </div>
 
-    <!-- チャットコンテンツ -->
     <div v-else class="d-flex flex-column" style="gap: 8px;">
-      <!-- メッセージ履歴（スクロールエリア） -->
       <div
         ref="chatTimeline"
         class="overflow-y-auto pa-1 d-flex flex-column"
@@ -60,7 +56,6 @@
           :key="index"
           :class="['d-flex', msg.role === 'user' ? 'justify-end' : 'justify-start']"
         >
-          <!-- バブル -->
           <div :style="{ maxWidth: '90%' }">
             <v-card
               :color="msg.role === 'user' ? 'primary' : 'grey lighten-4'"
@@ -69,10 +64,8 @@
               style="border-radius: 8px; box-shadow: none;"
               outlined
             >
-              <!-- 本文 -->
               <div class="text-caption chat-text" v-html="formatMessage(msg.message)"></div>
 
-              <!-- 編成提案 -->
               <div v-if="msg.suggestion" class="mt-2">
                 <v-divider class="my-1" :dark="msg.role === 'user'" />
                 <div v-for="(fleet, fi) in msg.suggestion.fleets" :key="fi" class="mb-2">
@@ -124,7 +117,6 @@
           </div>
         </div>
 
-        <!-- 考え中インジケーター -->
         <div v-if="loading" class="d-flex justify-start">
           <v-card color="grey lighten-4" class="pa-2 rounded-bl-0" style="border-radius: 8px;" outlined>
             <div class="typing-indicator">
@@ -136,7 +128,6 @@
         </div>
       </div>
 
-      <!-- 入力・送信 -->
       <div class="d-flex align-center" style="gap: 4px;">
         <v-textarea
           v-model="request"
@@ -170,7 +161,6 @@
     </div>
   </v-card>
 
-  <!-- 閉じている時のボタン -->
   <v-btn
     v-else
     class="general-container my-2"
@@ -215,14 +205,55 @@ export default Vue.extend({
     };
   },
   computed: {
+    mainSaveDataId(): string {
+      return this.$store.state.mainSaveData ? this.$store.state.mainSaveData.id : 'default';
+    },
     hasApiKey(): boolean {
-      return !!(this.config && this.config.provider !== 'none' && this.config.apiKey);
+      if (!this.config || this.config.provider === 'none') return false;
+      if (this.config.provider === 'mock' || this.config.provider === 'ollama') return true;
+      return !!this.config.apiKey;
+    },
+  },
+  watch: {
+    mainSaveDataId: {
+      handler() {
+        this.loadHistoryFromStorage();
+      },
+      immediate: true,
     },
   },
   async created() {
     this.config = await loadAiConfig();
+    this.$root.$on('ai-config-changed', this.reloadAiConfig);
+  },
+  beforeDestroy() {
+    this.$root.$off('ai-config-changed', this.reloadAiConfig);
   },
   methods: {
+    async reloadAiConfig() {
+      this.config = await loadAiConfig();
+    },
+    loadHistoryFromStorage() {
+      try {
+        const key = `ai_panel_chat_history_${this.mainSaveDataId}`;
+        const stored = localStorage.getItem(key);
+        if (stored) {
+          this.chatHistory = JSON.parse(stored);
+        } else {
+          this.chatHistory = [];
+        }
+      } catch (e) {
+        console.error('Failed to load panel chat history', e);
+      }
+    },
+    saveHistoryToStorage() {
+      try {
+        const key = `ai_panel_chat_history_${this.mainSaveDataId}`;
+        localStorage.setItem(key, JSON.stringify(this.chatHistory));
+      } catch (e) {
+        console.error('Failed to save panel chat history', e);
+      }
+    },
     formatMessage(text: string): string {
       if (!text) return '';
       let escaped = text
@@ -252,11 +283,10 @@ export default Vue.extend({
         role: 'user',
         message: userText,
       });
+      this.saveHistoryToStorage();
       this.scrollToBottom();
 
       try {
-        // 現在計算機にロードされている艦隊の計算値データを収集
-        // 現在計算機にロードされている艦隊の計算値データを直接ストアから収集
         const manager = this.$store.state.calcManager as CalcManager;
 
         const fleetContext = await buildFleetContext(
@@ -278,6 +308,7 @@ export default Vue.extend({
         const res = await chatWithAi(this.config, this.chatHistory, fleetContext, knowledgeContext);
         if (res) {
           this.chatHistory.push(res);
+          this.saveHistoryToStorage();
         } else {
           this.error = 'AIからの応答を取得できませんでした。';
         }
@@ -297,6 +328,7 @@ export default Vue.extend({
       /* eslint-disable-next-line no-alert, no-restricted-globals */
       if (confirm('会話履歴をクリアしますか？')) {
         this.chatHistory = [];
+        this.saveHistoryToStorage();
         this.error = '';
       }
     },
@@ -338,25 +370,20 @@ export default Vue.extend({
       const shipMasters = this.$store.state.ships as ShipMaster[];
       const itemMasters = this.$store.state.items as ItemMaster[];
 
-      // Apply map and enemies if mapId is suggested
       if (suggestion.mapId) {
-        const cells = this.$store.state.cells as CellMaster[];
-        const enemies = this.$store.getters.getEnemies as EnemyMaster[];
-        applyMapAndEnemies(manager, suggestion.mapId, cells, enemies, itemMasters);
+        const cells = this.$store.state.cells as any[];
+        const enemies = this.$store.getters.getEnemies as any[];
+        applyMapAndEnemies(manager, suggestion.mapId, cells, enemies, this.$store.state.items as any[]);
       }
 
-      // Rename preset name if presetName is suggested
       if (suggestion.presetName) {
         mainSaveData.name = suggestion.presetName;
       }
 
       fleetSuggestList.forEach((fleetSuggest, fIdx) => {
-        // 第一艦隊(0)と第二艦隊(1)のみ対応。また、現在の計算機に第2艦隊が存在しない（通常艦隊編成など）場合はスルー
         if (fIdx >= manager.fleetInfo.fleets.length) return;
 
         const newShips: Ship[] = [];
-
-        // 遊撃部隊の場合は最大7隻、通常は最大6隻スロットを埋める。AIが7番目の艦娘を提案している場合や、既に7隻以上編成されている場合は7隻とする。
         const has7thSuggest = fleetSuggest.ships.some((s) => s.slot === 7);
         const slotLimit = (manager.fleetInfo.fleets.length === 1 && fIdx === 0)
           ? Math.max(manager.fleetInfo.fleets[0].ships.length, has7thSuggest ? 7 : 6)
@@ -370,7 +397,6 @@ export default Vue.extend({
             continue;
           }
 
-          // Match ship name
           const cleanedShipName = shipSuggest.name.split('(')[0].trim();
           const shipMaster = shipMasters.find((s) => s.name === cleanedShipName);
 
@@ -379,18 +405,15 @@ export default Vue.extend({
             continue;
           }
 
-          // Parse level
           const lvMatch = shipSuggest.name.match(/Lv(\d+)/);
           const level = lvMatch ? parseInt(lvMatch[1], 10) : 99;
 
-          // Parse items
           const normalItems: Item[] = [];
           let exItem = new Item();
 
-          shipSuggest.equipments.forEach((eqName) => {
+          (shipSuggest.equipments || []).forEach((eqName) => {
             const isEx = eqName.startsWith('補強増設:');
             const eqCleanName = eqName.replace('補強増設:', '').trim();
-
             const remodelMatch = eqCleanName.match(/★\+(\d+)/);
             const remodel = remodelMatch ? parseInt(remodelMatch[1], 10) : 0;
             const baseEqName = eqCleanName.replace(/★\+\d+/, '').trim();
@@ -406,12 +429,10 @@ export default Vue.extend({
             }
           });
 
-          // Add standard slot count items if missing
           while (normalItems.length < shipMaster.slotCount) {
             normalItems.push(new Item({ slot: shipMaster.slots[normalItems.length] }));
           }
 
-          // Check releaseExpand status from shipStock
           const shipStock = this.$store.state.shipStock.find((s: any) => s.id === shipMaster.id);
           const releaseExpand = shipStock ? shipStock.releaseExpand : false;
 
@@ -426,12 +447,10 @@ export default Vue.extend({
           newShips.push(builtShip);
         }
 
-        // Replace the fleet at index fIdx
         const currentFleet = manager.fleetInfo.fleets[fIdx];
         manager.fleetInfo.fleets[fIdx] = new Fleet({ fleet: currentFleet, ships: newShips });
       });
 
-      // 基地航空隊の自動セット処理を追加
       if (suggestion.airbases && suggestion.airbases.length) {
         suggestion.airbases.forEach((abSuggest) => {
           const abIdx = abSuggest.index;
@@ -457,14 +476,13 @@ export default Vue.extend({
                 master: itemMaster,
                 slot: itemMaster.airbaseMaxSlot,
                 remodel,
-                level: 120, // 基地は熟練度最大で展開
+                level: 120,
               }));
             } else {
               newAbItems.push(new Item());
             }
           }
 
-          // インスタンスを更新
           manager.airbaseInfo.airbases[abIdx] = new Airbase({
             airbase,
             items: newAbItems,
@@ -473,11 +491,9 @@ export default Vue.extend({
         });
       }
 
-      // Trigger recalculation
       manager.fleetInfo.calculated = false;
       manager.airbaseInfo.calculated = false;
 
-      // Save to history and commit to store
       mainSaveData.putHistory(manager);
       mainSaveData.saveManagerData();
 
@@ -500,7 +516,6 @@ export default Vue.extend({
   font-size: 12px;
 }
 
-/* タイピングアニメーション */
 .typing-indicator {
   display: flex;
   align-items: center;

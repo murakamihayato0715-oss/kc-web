@@ -9,5 +9,11 @@ module.exports = {
   },
   configureWebpack: {
     devtool: 'source-map',
+    resolve: {
+      fallback: {
+        fs: false,
+        path: false,
+      },
+    },
   },
 };

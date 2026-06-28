@@ -226,6 +226,22 @@ export function checkBranchConditions(dest: Destination, fleetInfo: any): string
     matchRule('海防', deCount);
   }
 
+  // 3. 特殊海域ルート検証 (例: 5-5 BKPSルート)
+  if (dest.id === '5-5' || dest.routeName.includes('5-5') || dest.routeName.includes('BKPS')) {
+    let bbCount = 0;
+    let cvCount = 0;
+    let aoCount = 0;
+    for (const s of ships) {
+      const type = s.data?.type;
+      if ([8, 9, 10, 12].includes(type)) bbCount++;
+      if ([7, 11, 18].includes(type)) cvCount++;
+      if ([15, 22].includes(type)) aoCount++;
+    }
+    if (cvCount > 2) warnings.push('5-5 BKPSルート違反: 空母が3隻以上含まれています（最大2隻まで）。');
+    if (bbCount > 2) warnings.push('5-5 BKPSルート違反: 戦艦/航戦が3隻以上含まれています（最大2隻まで）。');
+    if (aoCount > 0) warnings.push('5-5 BKPSルート違反: 補給艦が含まれています。');
+  }
+
   return warnings;
 }
 

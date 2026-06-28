@@ -374,7 +374,7 @@
         <div class="d-flex align-center" style="gap: 8px;" v-show="!simRunning">
           <v-select
             v-model="simCount"
-            :items="[100, 500, 1000]"
+            :items="[5000, 10000]"
             label="試行回数"
             dense
             hide-details
@@ -454,7 +454,17 @@
             </v-row>
 
             <v-row dense v-if="setting" class="mt-2">
-              <v-col cols="12">
+              <v-col cols="12" sm="6">
+                <v-checkbox
+                  v-model="setting.simBossNightBattle"
+                  label="ボスマス夜戦突入を許可 (昼戦終了後に夜戦へ突入)"
+                  dense
+                  hide-details
+                  @change="saveSettings"
+                  class="mt-0 font-weight-medium text-caption"
+                />
+              </v-col>
+              <v-col cols="12" sm="6">
                 <v-checkbox
                   v-model="setting.simSubmarineDecoy"
                   label="潜水艦デコイ大破進撃を許可 (大破した潜水艦を撤退判定から除外)"
@@ -865,7 +875,7 @@ export default Vue.extend({
     isMobile: true,
     simResult: null as SimTotalResult | null,
     simRunning: false,
-    simCount: 1000,
+    simCount: 5000,
     customFormations: [] as number[],
   }),
   computed: {

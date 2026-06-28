@@ -63,17 +63,42 @@ export function applyMapAndEnemies(
         mainFleetFormation = FORMATION.VANGUARD;
       } else if (enemies[0] && enemies[0].isSubmarine) {
         mainFleetFormation = FORMATION.LINE_ABREAST;
+      } else {
+        // 大和武蔵型特殊攻撃(大和タッチ)の発動判定：水上戦・ボス戦マスでは梯形陣(4)を自動適用
+        const hasYamatoClass = manager && manager.fleetInfo && manager.fleetInfo.fleets[0]
+          && manager.fleetInfo.fleets[0].ships.some((s) => s && s.data && (s.data.originalId === 131 || s.data.originalId === 143));
+        if (hasYamatoClass) {
+          mainFleetFormation = FORMATION.ECHELON;
+        }
       }
+
+      const ef = new EnemyFleet({
+        enemies,
+        formation: cell.formation,
+        cellType: cell.cellType,
+        radius: cell.radius,
+        area: cell.area || mapId,
+        nodeName: cell.node,
+        mainFleetFormation,
+      });
+      (ef as any).selected = true;
+      (ef as any).isActive = true;
+      fleets.push(ef);
+    } else {
+      // セルデータ未読み込み時のフォールバック敵編成自動生成 (例: 7-1等の潜水戦マス)
+      const fallbackEnemyIds = [1605, 1533, 1533]; // 潜水ソ級elite, 潜水カ級, 潜水カ級
+      const enemies = fallbackEnemyIds.map((id) => Enemy.createEnemyFromMasterId(id, false, enemiesMaster, itemMasters));
+      const cellType = CELL_TYPE.NORMAL;
 
       fleets.push(
         new EnemyFleet({
           enemies,
-          formation: cell.formation,
-          cellType: cell.cellType,
-          radius: cell.radius,
-          area: cell.area,
-          nodeName: cell.node,
-          mainFleetFormation,
+          formation: FORMATION.LINE_ABREAST,
+          cellType,
+          radius: [1],
+          area: mapId,
+          nodeName,
+          mainFleetFormation: FORMATION.LINE_ABREAST,
         }),
       );
     }

@@ -4,9 +4,12 @@ import Item from '@/classes/item/item';
 import Enemy from '@/classes/enemy/enemy';
 import Fleet from '@/classes/fleet/fleet';
 import Airbase from '@/classes/airbase/airbase';
-import { AB_MODE, CELL_TYPE } from '@/classes/const';
+import Const, { AB_MODE, CELL_TYPE } from '@/classes/const';
 import { MultiFleetSuggestion } from '@/ai/types';
 import cloneDeep from 'lodash/cloneDeep';
+import ItemMaster from '@/classes/item/itemMaster'; // ここが特に重要でした
+import ShipMaster from '@/classes/fleet/shipMaster'; // 艦娘データ判定に必要
+import ShipValidation from '@/classes/fleet/shipValidation';
 
 /**
  * 熟練度レベル(0~120)をシミュレータ用(0~7)に変換します。
@@ -23,31 +26,65 @@ function getProfRank(level: number): number {
 }
 
 /**
- * 装備データをシミュレータ用の形式に変換します。
+ * AIの出力をデータベース上の正しいIDと結びつけるための曖昧検索・修正エンジン
  */
-function mapItem(item: Item) {
-  if (!item || !item.data || item.data.id <= 0) return null;
+function findItemMaster(name: string, itemMasters: ItemMaster[]) {
+  // 表記ゆれを正規化（「★+」などの装飾を除去）
+  const baseName = name.replace(/★\+\d+/, '').trim();
+  // 完全一致を探し、なければ部分一致で最も近いものを探す
+  let master = itemMasters.find((m) => m.name === baseName);
+  if (!master) {
+    master = itemMasters.find((m) => m.name.includes(baseName) || baseName.includes(m.name));
+  }
+  return master;
+}
+
+function mapItem(item: Item | string | null | undefined, itemMasters: ItemMaster[]) {
+  if (!item) return null;
+
+  // AIが文字列で装備を出してきた場合の処理（これが今のメインの修正点）
+  if (typeof item === 'string') {
+    // 1. 名前の正規化（★+数字を削る）
+    const baseName = item.replace(/★\+\d+/, '').trim();
+    // 2. データベースから検索
+    const master = itemMasters.find((m) => m.name === baseName);
+    // 3. なければ、名前に含まれるものを探す（曖昧検索）
+    const found = master || itemMasters.find((m) => m.name.includes(baseName) || baseName.includes(m.name));
+
+    if (!found) return null;
+
+    const remodelMatch = item.match(/★\+(\d+)/);
+    return {
+      masterId: found.id,
+      improve: remodelMatch ? parseInt(remodelMatch[1], 10) : 0,
+      proficiency: 7,
+    };
+  }
+
+  // 既存のItemオブジェクトの場合
+  if (!item.data || item.data.id <= 0) return null;
   return {
     masterId: item.data.id,
     improve: item.remodel || 0,
     proficiency: getProfRank(item.level || 0),
   };
 }
-
 /**
- * 艦娘または敵艦船データをシミュレータ用の形式に変換します。
+ * 艦娘データの変換 (mapShip) の修正
  */
-function mapShip(ship: Ship | Enemy) {
+// mapShip の定義を以下のように変更
+function mapShip(ship: Ship | Enemy, itemMasters: ItemMaster[]) {
   if (!ship || !ship.data || ship.data.id <= 0) return null;
 
   const equips: any[] = [];
   ship.items.forEach((item) => {
-    const mapped = mapItem(item);
+    // ここで itemMasters を渡す
+    const mapped = mapItem(item, itemMasters);
     if (mapped) equips.push(mapped);
   });
-  // 補強増設スロットの装備を末尾に追加
+  // exItem も同様に
   if (ship.exItem && ship.exItem.data && ship.exItem.data.id > 0) {
-    const mappedEx = mapItem(ship.exItem);
+    const mappedEx = mapItem(ship.exItem, itemMasters);
     if (mappedEx) equips.push(mappedEx);
   }
 
@@ -80,25 +117,25 @@ function mapShip(ship: Ship | Enemy) {
   };
 }
 
-/**
- * CalcManagerをシミュレータ用の出撃設定データオブジェクトに変換します。
- */
 export function mapCalcManagerToSimData(manager: CalcManager, numSims = 5000) {
   const { fleetInfo } = manager;
+  const itemMasters: ItemMaster[] = (manager as any).itemInfo?.itemMasters
+                                 || (manager as any).itemMasters
+                                 || [];
 
-  // 自本隊
+  const mapShipWithMaster = (s: any) => mapShip(s, itemMasters);
+
   const mainShips = fleetInfo.fleets[0].ships
     .filter((s) => s.isActive && !s.isEmpty)
-    .map(mapShip)
+    .map(mapShipWithMaster)
     .filter(Boolean);
 
-  // 自随伴（連合艦隊の場合）
   const isUnion = !!(fleetInfo.isUnion && fleetInfo.fleets[1] && fleetInfo.fleets[1].ships.length);
   const escortShips = (
     isUnion && fleetInfo.fleets[1]
       ? fleetInfo.fleets[1].ships
         .filter((s) => s.isActive && !s.isEmpty)
-        .map(mapShip)
+        .map(mapShipWithMaster)
         .filter(Boolean)
       : undefined
   );
@@ -110,51 +147,22 @@ export function mapCalcManagerToSimData(manager: CalcManager, numSims = 5000) {
     formation: fleetInfo.fleets[0].formation || 1,
   };
 
-  // 道中支援艦隊（第3艦隊）
-  const supportNShips = (
-    fleetInfo.fleets[2] && fleetInfo.fleets[2].ships.some((s) => s.isActive && !s.isEmpty)
-      ? fleetInfo.fleets[2].ships
-        .filter((s) => s.isActive && !s.isEmpty)
-        .map(mapShip)
-        .filter(Boolean)
-      : undefined
-  );
-  const fleetSupportN = (
-    supportNShips && supportNShips.length > 0
-      ? {
-        ships: supportNShips,
-        formation: fleetInfo.fleets[2].formation || 1,
-      }
-      : undefined
-  );
+  // 支援艦隊および基地航空隊の変換（すべてmapShipWithMasterを使用）
+  const supportNShips = fleetInfo.fleets[2]?.ships.filter((s) => s.isActive && !s.isEmpty).map(mapShipWithMaster).filter(Boolean);
+  const fleetSupportN = (supportNShips && supportNShips.length > 0) ? { ships: supportNShips, formation: fleetInfo.fleets[2].formation || 1 } : undefined;
 
-  // 決戦支援艦隊（第4艦隊）
-  const supportBShips = (
-    fleetInfo.fleets[3] && fleetInfo.fleets[3].ships.some((s) => s.isActive && !s.isEmpty)
-      ? fleetInfo.fleets[3].ships
-        .filter((s) => s.isActive && !s.isEmpty)
-        .map(mapShip)
-        .filter(Boolean)
-      : undefined
-  );
-  const fleetSupportB = (
-    supportBShips && supportBShips.length > 0
-      ? {
-        ships: supportBShips,
-        formation: fleetInfo.fleets[3].formation || 1,
-      }
-      : undefined
-  );
+  const supportBShips = fleetInfo.fleets[3]?.ships.filter((s) => s.isActive && !s.isEmpty).map(mapShipWithMaster).filter(Boolean);
+  const fleetSupportB = (supportBShips && supportBShips.length > 0) ? { ships: supportBShips, formation: fleetInfo.fleets[3].formation || 1 } : undefined;
 
-  // 基地航空隊
+  // 基地航空隊の修正（mapItem にも itemMasters を渡す）
   const lbas: any[] = [];
-  manager.airbaseInfo.airbases.forEach((ab) => {
+  (manager as any).airbaseInfo?.airbases.forEach((ab: any) => {
     if (ab.mode === AB_MODE.BATTLE) {
       const equips: any[] = [];
       const slots: number[] = [];
-      ab.items.forEach((item) => {
+      ab.items.forEach((item: any) => {
         if (item && item.data && item.data.id > 0) {
-          const mapped = mapItem(item);
+          const mapped = mapItem(item, itemMasters); // ★ここも引数追加
           if (mapped) {
             equips.push(mapped);
             slots.push(item.fullSlot || 18);
@@ -169,14 +177,16 @@ export function mapCalcManagerToSimData(manager: CalcManager, numSims = 5000) {
     lbas.push(null);
   });
 
+  // （後続の nodes 構築処理内でも .map(mapShip) を .map(mapShipWithMaster) に置き換えてください）
+  // ...
   // 戦闘マスノードの構築
   const nodes = manager.battleInfo.fleets
     .map((enemyFleet, index) => {
-      const mainEnemies = enemyFleet.mainEnemies.map(mapShip).filter(Boolean);
+      const mainEnemies = enemyFleet.mainEnemies.map((s) => mapShip(s, itemMasters)).filter(Boolean);
       if (mainEnemies.length === 0) return null;
 
       const escortEnemies = enemyFleet.isUnion
-        ? enemyFleet.escortEnemies.map(mapShip).filter(Boolean)
+        ? enemyFleet.escortEnemies.map((s) => mapShip(s, itemMasters)).filter(Boolean)
         : undefined;
 
       const fleetE = {
@@ -195,10 +205,11 @@ export function mapCalcManagerToSimData(manager: CalcManager, numSims = 5000) {
       });
 
       const isBoss = index === manager.battleInfo.fleets.length - 1;
+      const bossNightBattle = (manager as any).bossNightBattle !== false;
 
       return {
         fleetE,
-        doNB: enemyFleet.cellType === CELL_TYPE.NIGHT || isBoss,
+        doNB: enemyFleet.cellType === CELL_TYPE.NIGHT || (isBoss && bossNightBattle),
         NBOnly: enemyFleet.cellType === CELL_TYPE.NIGHT,
         airOnly:
           enemyFleet.cellType === CELL_TYPE.AERIAL_COMBAT
@@ -240,30 +251,43 @@ export function buildCalcManagerFromSuggestion(
 ): CalcManager {
   const manager = cloneDeep(baseManager);
 
+  if (!suggestion || !Array.isArray(suggestion.fleets) || !manager || !manager.fleetInfo || !Array.isArray(manager.fleetInfo.fleets)) {
+    return manager;
+  }
+
+  const safeShipMasters = Array.isArray(shipMasters) ? shipMasters : [];
+  const safeItemMasters = Array.isArray(itemMasters) ? itemMasters : [];
+  const safeShipStock = Array.isArray(shipStock) ? shipStock : [];
+
   suggestion.fleets.forEach((fleetSuggest, fIdx) => {
-    if (fIdx >= manager.fleetInfo.fleets.length) return;
+    if (!fleetSuggest || fIdx >= manager.fleetInfo.fleets.length) return;
 
     const newShips: Ship[] = [];
+    const shipsArray = Array.isArray(fleetSuggest.ships) ? fleetSuggest.ships : [];
 
     // 遊撃部隊の場合は最大7隻、通常は最大6隻
-    const has7thSuggest = fleetSuggest.ships.some((s) => s.slot === 7);
+    const has7thSuggest = shipsArray.some((s) => s && s.slot === 7);
+    const targetFleet = manager.fleetInfo.fleets[fIdx];
+    const currentFleetShipsLen = targetFleet && Array.isArray(targetFleet.ships) ? targetFleet.ships.length : 6;
     const slotLimit = (
       manager.fleetInfo.fleets.length === 1 && fIdx === 0
-        ? Math.max(manager.fleetInfo.fleets[0].ships.length, has7thSuggest ? 7 : 6)
-        : manager.fleetInfo.fleets[fIdx].ships.length
+        ? Math.max(currentFleetShipsLen, has7thSuggest ? 7 : 6)
+        : currentFleetShipsLen
     );
 
     for (let slotIdx = 0; slotIdx < slotLimit; slotIdx += 1) {
       const slotNum = slotIdx + 1;
-      const shipSuggest = fleetSuggest.ships.find((s) => s.slot === slotNum);
-      if (!shipSuggest) {
+      const shipSuggest = shipsArray.find((s) => s && s.slot === slotNum);
+      if (!shipSuggest || !shipSuggest.name || typeof shipSuggest.name !== 'string') {
         newShips.push(new Ship());
         continue;
       }
 
-      // 名前マッチング
-      const cleanedShipName = shipSuggest.name.split('(')[0].trim();
-      const shipMaster = shipMasters.find((s) => s.name === cleanedShipName);
+      // ID直接マッチング優先、なければ名前マッチング
+      const cleanedShipName = (shipSuggest.name || '').split('(')[0].trim();
+      const shipMaster = shipSuggest.shipId
+        ? safeShipMasters.find((s) => s && s.id === shipSuggest.shipId)
+        : safeShipMasters.find((s) => s && s.name === cleanedShipName);
 
       if (!shipMaster) {
         newShips.push(new Ship());
@@ -277,33 +301,47 @@ export function buildCalcManagerFromSuggestion(
       // 装備解析
       const normalItems: Item[] = [];
       let exItem = new Item();
+      const equipmentsArray = Array.isArray(shipSuggest.equipments) ? shipSuggest.equipments : [];
 
-      shipSuggest.equipments.forEach((eqName) => {
-        const isEx = eqName.startsWith('補強増設:');
+      equipmentsArray.forEach((eqName) => {
+        if (!eqName || typeof eqName !== 'string') return;
+        const isExHeader = eqName.startsWith('補強増設:');
         const eqCleanName = eqName.replace('補強増設:', '').trim();
 
         const remodelMatch = eqCleanName.match(/★\+(\d+)/);
         const remodel = remodelMatch ? parseInt(remodelMatch[1], 10) : 0;
         const baseEqName = eqCleanName.replace(/★\+\d+/, '').trim();
 
-        const itemMaster = itemMasters.find((i) => i.name === baseEqName);
+        const itemMaster = safeItemMasters.find((i) => i && i.name === baseEqName);
         if (itemMaster) {
-          const item = new Item({ master: itemMaster, remodel });
-          if (isEx) {
-            exItem = item;
+          const itemProficiency = itemMaster.isPlane ? 120 : 0;
+          const canEquipEx = ShipValidation.isValidItem(shipMaster, itemMaster, Const.EXPAND_SLOT_INDEX, remodel);
+
+          if (isExHeader || (normalItems.length >= (shipMaster.slotCount || 0) && canEquipEx)) {
+            if (canEquipEx) {
+              exItem = new Item({ master: itemMaster, remodel, slot: 0, level: itemProficiency });
+            }
           } else {
-            normalItems.push(item);
+            const itemSlotIdx = normalItems.length;
+            if (ShipValidation.isValidItem(shipMaster, itemMaster, itemSlotIdx, remodel)) {
+              const slotCap = Array.isArray(shipMaster.slots) ? (shipMaster.slots[itemSlotIdx] || 0) : 0;
+              normalItems.push(new Item({ master: itemMaster, remodel, slot: slotCap, level: itemProficiency }));
+            } else if (canEquipEx && (!exItem || !exItem.data || exItem.data.id <= 0)) {
+              exItem = new Item({ master: itemMaster, remodel, slot: 0, level: itemProficiency });
+            }
           }
         }
       });
 
       // 標準スロット数分、空の装備を追加
-      while (normalItems.length < shipMaster.slotCount) {
-        normalItems.push(new Item({ slot: shipMaster.slots[normalItems.length] }));
+      const slotCount = shipMaster.slotCount || 0;
+      while (normalItems.length < slotCount) {
+        const slotCap = Array.isArray(shipMaster.slots) ? shipMaster.slots[normalItems.length] : 0;
+        normalItems.push(new Item({ slot: slotCap }));
       }
 
       // shipStockから増設解放状態を取得
-      const stockItem = shipStock.find((s: any) => s.id === shipMaster.id);
+      const stockItem = safeShipStock.find((s: any) => s && s.id === shipMaster.id);
       const releaseExpand = stockItem ? stockItem.releaseExpand : false;
 
       const builtShip = new Ship({
@@ -322,17 +360,19 @@ export function buildCalcManagerFromSuggestion(
   });
 
   // 基地航空隊の自動セット処理
-  if (suggestion.airbases && suggestion.airbases.length) {
+  if (Array.isArray(suggestion.airbases) && manager.airbaseInfo && Array.isArray(manager.airbaseInfo.airbases)) {
     suggestion.airbases.forEach((abSuggest) => {
+      if (!abSuggest) return;
       const abIdx = abSuggest.index;
-      if (abIdx >= manager.airbaseInfo.airbases.length) return;
+      if (typeof abIdx !== 'number' || abIdx >= manager.airbaseInfo.airbases.length) return;
 
       const airbase = manager.airbaseInfo.airbases[abIdx];
       const newAbItems: Item[] = [];
+      const abItemsArray = Array.isArray(abSuggest.items) ? abSuggest.items : [];
 
       for (let slotIdx = 0; slotIdx < 4; slotIdx += 1) {
-        const eqName = abSuggest.items[slotIdx];
-        if (!eqName) {
+        const eqName = abItemsArray[slotIdx];
+        if (!eqName || typeof eqName !== 'string') {
           newAbItems.push(new Item());
           continue;
         }
@@ -341,7 +381,7 @@ export function buildCalcManagerFromSuggestion(
         const remodel = remodelMatch ? parseInt(remodelMatch[1], 10) : 0;
         const baseEqName = eqName.replace(/★\+\d+/, '').trim();
 
-        const itemMaster = itemMasters.find((i) => i.name === baseEqName);
+        const itemMaster = safeItemMasters.find((i) => i && i.name === baseEqName);
         if (itemMaster) {
           newAbItems.push(
             new Item({

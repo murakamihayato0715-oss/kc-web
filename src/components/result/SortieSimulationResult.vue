@@ -24,8 +24,8 @@
       </v-col>
       <v-col cols="6" sm="3">
         <v-card class="pa-3 text-center stat-box" flat outlined>
-          <div class="stat-label">ボスA勝利以上</div>
-          <div class="stat-val teal--text">{{ bossAOrBetterRate }}%</div>
+          <div class="stat-label">ボス旗艦撃破率</div>
+          <div class="stat-val teal--text">{{ bossFlagshipSinkRate }}%</div>
         </v-card>
       </v-col>
       <v-col cols="6" sm="3">
@@ -127,7 +127,7 @@
       <v-row dense>
         <v-col cols="6" sm="3">
           <div class="d-flex align-center pa-2 border rounded">
-            <v-img :src="`./img/util/fuel.png`" height="20" width="20" class="mr-2" />
+            <v-img :src="`./img/util/fuel.png`" contain height="20" width="20" class="mr-2" />
             <div>
               <div class="text-caption grey--text">燃料</div>
               <div class="font-weight-bold body-2">{{ avgFuel }} (修: {{ avgRepairFuel }})</div>
@@ -136,7 +136,7 @@
         </v-col>
         <v-col cols="6" sm="3">
           <div class="d-flex align-center pa-2 border rounded">
-            <v-img :src="`./img/util/ammo.png`" height="20" width="20" class="mr-2" />
+            <v-img :src="`./img/util/ammo.png`" contain height="20" width="20" class="mr-2" />
             <div>
               <div class="text-caption grey--text">弾薬</div>
               <div class="font-weight-bold body-2">{{ avgAmmo }}</div>
@@ -145,7 +145,7 @@
         </v-col>
         <v-col cols="6" sm="3">
           <div class="d-flex align-center pa-2 border rounded">
-            <v-img :src="`./img/util/steel.png`" height="20" width="20" class="mr-2" />
+            <v-img :src="`./img/util/steel.png`" contain height="20" width="20" class="mr-2" />
             <div>
               <div class="text-caption grey--text">鋼材</div>
               <div class="font-weight-bold body-2">{{ avgSteel }}</div>
@@ -154,7 +154,7 @@
         </v-col>
         <v-col cols="6" sm="3">
           <div class="d-flex align-center pa-2 border rounded">
-            <v-img :src="`./img/util/bauxite.png`" height="20" width="20" class="mr-2" />
+            <v-img :src="`./img/util/bauxite.png`" contain height="20" width="20" class="mr-2" />
             <div>
               <div class="text-caption grey--text">ボーキ</div>
               <div class="font-weight-bold body-2">{{ avgBauxite }}</div>
@@ -192,6 +192,13 @@ export default Vue.extend({
       if (this.bossReachCount === 0) return '0.0';
       const lastNode = this.result.nodes[this.result.nodes.length - 1];
       const rate = (100 * lastNode.ranks.S) / this.bossReachCount;
+      return rate.toFixed(1);
+    },
+    bossFlagshipSinkRate(): string {
+      if (this.bossReachCount === 0) return '0.0';
+      const lastNode = this.result.nodes[this.result.nodes.length - 1];
+      const count = lastNode.ranks.S + lastNode.ranks.A + lastNode.ranks.B;
+      const rate = (100 * count) / this.bossReachCount;
       return rate.toFixed(1);
     },
     bossAOrBetterRate(): string {

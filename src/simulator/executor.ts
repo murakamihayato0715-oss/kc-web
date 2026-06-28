@@ -49,6 +49,89 @@ export interface SortieSimulationSetting {
   submarineDecoy?: boolean;
 }
 
+export interface SimulationValidationContext {
+  mapId?: number;
+  cellCount: number;
+  fleetShipCount: number;
+  hasEnemies: boolean;
+}
+
+export interface SimulationValidationResult {
+  isValid: boolean;
+  errorCode?: 'NO_CELLS' | 'NO_FLEET' | 'INVALID_SETTINGS';
+  errorMessage?: string;
+  context?: SimulationValidationContext;
+}
+
+export class SimulationValidationError extends Error {
+  public validationResult: SimulationValidationResult;
+
+  constructor(result: SimulationValidationResult) {
+    super(result.errorMessage || 'シミュレーション前提条件エラー');
+    this.name = 'SimulationValidationError';
+    this.validationResult = result;
+  }
+}
+
+/**
+ * シミュレーション実行前の前提条件（艦隊・敵編成・マス設定）を事前検証します。
+ */
+export function validateSimulationContext(manager: CalcManager): SimulationValidationResult {
+  if (!manager) {
+    return {
+      isValid: false,
+      errorCode: 'NO_FLEET',
+      errorMessage: '計算機マネージャー (CalcManager) が初期化されていません。',
+      context: { cellCount: 0, fleetShipCount: 0, hasEnemies: false },
+    };
+  }
+
+  // Active Map Area IDの取得 (BattleInfo内の第1敵艦隊のareaプロパティより)
+  const mapId = manager.battleInfo?.fleets?.[0]?.area;
+
+  // 1. 出撃艦隊の存在チェック
+  const mainFleet = manager.fleetInfo?.fleets?.[0];
+  const fleetShips = mainFleet?.ships || [];
+  const fleetShipCount = fleetShips.filter((s) => s && s.data && s.data.id > 0).length;
+  if (fleetShipCount === 0) {
+    return {
+      isValid: false,
+      errorCode: 'NO_FLEET',
+      errorMessage: '出撃可能な艦娘が編成されていません。艦隊を編成してください。',
+      context: { mapId, cellCount: manager.battleInfo?.fleets?.length || 0, fleetShipCount: 0, hasEnemies: false },
+    };
+  }
+
+  // 2. 戦闘マスおよび敵編成の存在チェック
+  const battleFleets = manager.battleInfo?.fleets || [];
+  const validCells = battleFleets.filter((f) => f && f.enemies && f.enemies.some((e) => e && e.data && e.data.id > 0));
+  const hasEnemies = validCells.length > 0;
+
+  if (!hasEnemies) {
+    return {
+      isValid: false,
+      errorCode: 'NO_CELLS',
+      errorMessage: 'シミュレーション可能な戦闘マス（敵主力艦隊が登録されているマス）が設定されていません。MAP画面等で敵編成を設定してください。',
+      context: {
+        mapId,
+        cellCount: battleFleets.length,
+        fleetShipCount,
+        hasEnemies: false,
+      },
+    };
+  }
+
+  return {
+    isValid: true,
+    context: {
+      mapId,
+      cellCount: validCells.length,
+      fleetShipCount,
+      hasEnemies: true,
+    },
+  };
+}
+
 /**
  * 戦闘シミュレーションを実行します。
  * @param manager 計算機マネージャー
@@ -63,6 +146,13 @@ export function runSortieSimulation(
 ): Promise<SimTotalResult> {
   return new Promise((resolve, reject) => {
     try {
+      // 事前バリデーション検証層
+      const validation = validateSimulationContext(manager);
+      if (!validation.isValid) {
+        reject(new SimulationValidationError(validation));
+        return;
+      }
+
       // データのマッピング
       const runs = numSims !== undefined ? numSims : 5000;
       const simData = mapCalcManagerToSimData(manager, runs) as any;
@@ -93,7 +183,14 @@ export function runSortieSimulation(
       }
 
       if (!simData.nodes || simData.nodes.length === 0) {
-        throw new Error('シミュレーション可能な戦闘マス（敵主力艦隊が登録されているマス）が設定されていません。MAP画面等で敵編成を設定してください。');
+        const mapId = manager.battleInfo?.fleets?.[0]?.area;
+        reject(new SimulationValidationError({
+          isValid: false,
+          errorCode: 'NO_CELLS',
+          errorMessage: 'シミュレーション可能な戦闘マス（敵主力艦隊が登録されているマス）が設定されていません。MAP画面等で敵編成を設定してください。',
+          context: { mapId, cellCount: 0, fleetShipCount: 6, hasEnemies: false },
+        }));
+        return;
       }
 
       // Web Workerのパスを生成

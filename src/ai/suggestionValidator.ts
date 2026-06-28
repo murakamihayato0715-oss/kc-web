@@ -85,9 +85,9 @@ export function validateInventory(
   };
 
   // 艦隊の装備をカウント
-  for (const fleet of suggestion.fleets) {
-    for (const ship of fleet.ships) {
-      for (const eq of ship.equipments) {
+  for (const fleet of (suggestion.fleets || [])) {
+    for (const ship of (fleet.ships || [])) {
+      for (const eq of (ship.equipments || [])) {
         countUsage(eq);
       }
     }
@@ -133,7 +133,9 @@ export function validateAirPower(
   shipStocks: ShipStock[],
   enemyAirPower?: number,
 ): ValidationWarning[] {
-  if (!suggestion || !suggestion.fleets.length) return [];
+  // ★変更前: if (!suggestion || !suggestion.fleets.length) return [];
+  // ★変更後: fleetsがundefinedの場合の安全確保
+  if (!suggestion || !suggestion.fleets || suggestion.fleets.length === 0) return [];
 
   const warnings: ValidationWarning[] = [];
 
@@ -143,12 +145,15 @@ export function validateAirPower(
 
   for (let slotIdx = 0; slotIdx < 6; slotIdx += 1) {
     const slotNum = slotIdx + 1;
-    const shipSuggest = fleetSuggest.ships.find((s) => s.slot === slotNum);
+    // ★変更前: const shipSuggest = fleetSuggest.ships.find((s) => s.slot === slotNum);
+    // ★変更後: ships配列が欠落している場合の安全確保
+    const shipSuggest = (fleetSuggest.ships || []).find((s) => s.slot === slotNum);
+    
     if (!shipSuggest) {
       ships.push(new Ship());
       continue;
     }
-
+    
     const cleanedShipName = shipSuggest.name.split('(')[0].trim();
     const shipMaster = shipMasters.find((s) => s.name === cleanedShipName);
     if (!shipMaster) {
@@ -162,7 +167,8 @@ export function validateAirPower(
     const normalItems: Item[] = [];
     let exItem = new Item();
 
-    shipSuggest.equipments.forEach((eqName) => {
+    // 変更後:
+    (shipSuggest.equipments || []).forEach((eqName) => {
       const parsed = parseEquipmentName(eqName);
       const itemMaster = itemMasters.find((i) => i.name === parsed.baseName);
       if (itemMaster) {
@@ -244,8 +250,9 @@ export function validateNames(
 
   const warnings: ValidationWarning[] = [];
 
-  for (const fleet of suggestion.fleets) {
-    for (const ship of fleet.ships) {
+  for (const fleet of (suggestion.fleets || [])) {
+    for (const ship of (fleet.ships || [])) {
+      if (!ship.name) continue; // 艦娘名が欠落している場合の安全確保
       const cleanedName = ship.name.split('(')[0].trim();
       if (!shipMasters.find((s) => s.name === cleanedName)) {
         warnings.push({
@@ -254,7 +261,9 @@ export function validateNames(
         });
       }
 
-      for (const eq of ship.equipments) {
+      // 変更前: for (const eq of ship.equipments) {
+      // 変更後:
+      for (const eq of (ship.equipments || [])) {
         const parsed = parseEquipmentName(eq);
         if (!itemMasters.find((m) => m.name === parsed.baseName)) {
           warnings.push({
@@ -425,8 +434,8 @@ export function applyEquipmentDowngrade(
   };
 
   // Downgrade ships' equipments
-  for (const fleet of newSuggestion.fleets) {
-    for (const ship of fleet.ships) {
+  for (const fleet of (newSuggestion.fleets || [])) {
+    for (const ship of (fleet.ships || [])) {
       if (ship.equipments) {
         ship.equipments = ship.equipments.map((eq) => processEquipment(eq));
       }

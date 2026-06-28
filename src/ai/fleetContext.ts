@@ -112,6 +112,19 @@ const FALLBACK_MAP_THREATS: Record<string, Record<string, any[]>> = {
     'Z': [
       { name: '深海海月姫', hp: 750, armor: 270, traits: [] }
     ]
+  },
+  '5-5': {
+    'B': [
+      { name: '潜水カ級flagship', hp: 42, armor: 21, traits: ['潜水艦', '先制雷撃あり'] }
+    ],
+    'P': [
+      { name: '軽母ヌ級改flagship', hp: 98, armor: 88, traits: ['先制航空攻撃あり'] },
+      { name: '戦艦レ級flagship', hp: 270, armor: 130, traits: ['先制雷撃あり', '超強力'] }
+    ],
+    'S': [
+      { name: '南方棲戦姫', hp: 380, armor: 188, traits: ['ボス'] },
+      { name: '戦艦レ級flagship', hp: 270, armor: 130, traits: ['先制雷撃あり', '超強力'] }
+    ]
   }
 };
 
@@ -533,38 +546,65 @@ export async function buildFleetContext(
     }
   });
 
-  // 各グループの上位10隻を追加
+  // 各グループの上位4隻を追加（トータル35隻程度へ集約）
+  const isAswMap = area === 71 || area === 15 || area === 74 || request.includes('7-1') || request.includes('1-5') || request.includes('対潜') || request.includes('潜水');
   Object.keys(groups).forEach((key) => {
     const group = groups[key];
-    group.sort((a, b) => b.level - a.level);
-    selectedStocks.push(...group.slice(0, 10));
+    group.sort((a, b) => {
+      if (isAswMap) {
+        const mA = shipMasters.find((m) => m && m.id === a.id);
+        const mB = shipMasters.find((m) => m && m.id === b.id);
+        const aswA = mA?.maxAsw || 0;
+        const aswB = mB?.maxAsw || 0;
+        if (aswA !== aswB) return aswB - aswA;
+      }
+      return b.level - a.level;
+    });
+    selectedStocks.push(...group.slice(0, 4));
   });
 
-  // 重複除去とレベル順ソート
+  // 重複除去および優先度順ソート
   const uniqueSelected = Array.from(new Set(selectedStocks));
-  uniqueSelected.sort((a, b) => b.level - a.level);
+  uniqueSelected.sort((a, b) => {
+    const aActive = activeShipIds.has(a.id);
+    const bActive = activeShipIds.has(b.id);
+    if (aActive !== bActive) return aActive ? -1 : 1;
+
+    if (isAswMap) {
+      const mA = shipMasters.find((m) => m && m.id === a.id);
+      const mB = shipMasters.find((m) => m && m.id === b.id);
+      const aswA = mA?.maxAsw || 0;
+      const aswB = mB?.maxAsw || 0;
+      if (aswA !== aswB) return aswB - aswA;
+    }
+    return b.level - a.level;
+  });
 
   let filteredStocks = uniqueSelected;
-  if (filteredStocks.length > 90) {
-    filteredStocks = filteredStocks.slice(0, 90);
+  if (filteredStocks.length > 80) {
+    filteredStocks = filteredStocks.slice(0, 80);
   }
 
   const candidateNames = filteredStocks.map(stock => {
     const master = shipMasters.find((m) => m.id === stock.id);
-    return master ? `${master.name}(Lv${stock.level})` : `ID:${stock.id}`;
+    const tag = stock.area ? `[札${stock.area}]` : '[無札]';
+    return master ? `${master.name}(Lv${stock.level})${tag}` : `ID:${stock.id}`;
   });
   console.log('Candidate Ships Passed to AI:', candidateNames);
   console.log('=======================================');
 
-  // 手持ち艦娘リスト（名前、艦種、Lv、補強増設状況、および装備可能手持ちをフィルタリングして出力）
+  // 手持ち艦娘リスト（火力、雷装、対空、対潜、索敵、回避、運、速力、補強増設、先制対潜、出撃札、スロット制限の完全フォーマット）
   const shipLines = filteredStocks.map((stock) => {
     const master = shipMasters.find((m) => m.id === stock.id);
     const name = master ? master.name : `ID:${stock.id}`;
     const typeName = master ? getShipTypeName(master.type) : '';
     const expand = stock.releaseExpand ? ' [補強増設あり]' : '';
+    const areaTag = stock.area ? ` [出撃札: 札${stock.area}]` : ' [未出撃/無札]';
 
     const aswVal = master ? Ship.getStatusFromLevel(stock.level, master.maxAsw, master.minAsw) + (stock.improvement?.asw || 0) : 0;
     const fireVal = master ? master.fire + (stock.improvement?.fire || 0) : 0;
+    const torpedoVal = master ? master.torpedo + (stock.improvement?.torpedo || 0) : 0;
+    const antiAirVal = master ? master.antiAir + (stock.improvement?.antiAir || 0) : 0;
     const scoutVal = master ? Ship.getStatusFromLevel(stock.level, master.maxScout, master.minScout) : 0;
     const avoidVal = master ? Ship.getStatusFromLevel(stock.level, master.maxAvoid, master.minAvoid) : 0;
     const hpVal = master ? (stock.level > 99 ? master.hp2 : master.hp) + (stock.improvement?.hp || 0) : 0;
@@ -575,9 +615,7 @@ export async function buildFleetContext(
     const isAswReady = (stock && master) ? checkOaswPotential(stock, master, itemStocks, itemMasters) : '';
 
     let restrictionLine = '';
-
     if (master) {
-      // スロット制限の抽出
       const restrictions = SHIP_SLOT_EQUIP_RESTRICTIONS.filter((r) => r.shipIds.includes(master.id));
       if (restrictions.length > 0) {
         const restrictionNotes = restrictions.map((r) => r.note);
@@ -585,17 +623,15 @@ export async function buildFleetContext(
       }
     }
 
-    // スロット数と補強増設の明示
     const expandSlotText = stock.releaseExpand ? '＋補強増設' : '';
     const slotCountText = master ? ` [${master.slotCount}スロット${expandSlotText}]` : '';
-
     const slotsText = master && master.slots && master.slots.length > 0 && master.slots.some((s) => s > 0)
       ? ` [搭載数: ${master.slots.slice(0, master.slotCount).join('/')}]`
       : '';
 
-    const statsInfo = ` [HP:${hpVal}/火力:${fireVal}/対潜:${aswVal}/索敵:${scoutVal}/回避:${avoidVal}/運:${luckVal}/${speedVal}]`;
+    const statsInfo = ` [HP:${hpVal}/火力:${fireVal}/雷装:${torpedoVal}/対空:${antiAirVal}/対潜:${aswVal}/索敵:${scoutVal}/回避:${avoidVal}/運:${luckVal}/${speedVal}]`;
 
-    return `・${name}(${typeName}) Lv${stock.level}${expand}${isAswReady}${slotCountText}${slotsText}${statsInfo}${restrictionLine}`;
+    return `・${name}(${typeName}) Lv${stock.level}${expand}${areaTag}${isAswReady}${slotCountText}${slotsText}${statsInfo}${restrictionLine}`;
   });
 
   // Find all item IDs that are valid for at least one ship in the filtered candidate list
