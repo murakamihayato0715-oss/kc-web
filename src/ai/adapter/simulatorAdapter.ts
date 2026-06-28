@@ -49,7 +49,7 @@ export class SimulatorAdapter {
       context.shipStocks,
     );
 
-    let mapIdToApply: number | undefined = undefined;
+    let mapIdToApply: number | undefined;
     const userReq = context.siteSetting?.userRequest || '';
     const reqMatch = userReq.match(/([1-7])-([1-7])/);
     if (reqMatch) {
@@ -108,14 +108,14 @@ export class SimulatorAdapter {
 
     // 戦闘セルのアクティブフラグ一括設定とディープコピー保護、および大和武蔵型特殊攻撃(梯形陣)の自動バインド
     if (manager && manager.battleInfo && Array.isArray(manager.battleInfo.fleets)) {
-      const userReq = context.siteSetting?.userRequest || '';
+      const formationReq = context.siteSetting?.userRequest || '';
       let overrideFormation: number | null = null;
-      if (userReq.includes('梯形')) overrideFormation = 4;
-      else if (userReq.includes('単縦')) overrideFormation = 1;
-      else if (userReq.includes('複縦')) overrideFormation = 2;
-      else if (userReq.includes('輪形')) overrideFormation = 3;
-      else if (userReq.includes('単横')) overrideFormation = 5;
-      else if (userReq.includes('警戒')) overrideFormation = 6;
+      if (formationReq.includes('梯形')) overrideFormation = 4;
+      else if (formationReq.includes('単縦')) overrideFormation = 1;
+      else if (formationReq.includes('複縦')) overrideFormation = 2;
+      else if (formationReq.includes('輪形')) overrideFormation = 3;
+      else if (formationReq.includes('単横')) overrideFormation = 5;
+      else if (formationReq.includes('警戒')) overrideFormation = 6;
 
       const hasYamatoClass = manager.fleetInfo && manager.fleetInfo.fleets[0]
         && manager.fleetInfo.fleets[0].ships.some((s) => s && s.data && (s.data.originalId === 131 || s.data.originalId === 143));
