@@ -697,7 +697,9 @@ export async function buildFleetContext(
 
     const statsInfo = ` [HP:${hpVal}/火力:${fireVal}/雷装:${torpedoVal}/対空:${antiAirVal}/対潜:${aswVal}/索敵:${scoutVal}/回避:${avoidVal}/運:${luckVal}/${speedVal}]`;
 
-    return `・${name} (shipId:${stock.id}, ${typeName}) Lv${stock.level}${expand}${areaTag}${isAswReady}${slotCountText}${slotsText}${statsInfo}${restrictionLine}`;
+    const rangeNames = ['', '短', '中', '長', '超長'];
+    const baseRangeName = master ? (rangeNames[master.range] || '中') : '中';
+    return `・${name} (shipId:${stock.id}/Lv${stock.level}, 艦種:${typeName}, 素の射程:${baseRangeName})${expand}${areaTag}${isAswReady}${slotCountText}${slotsText}${statsInfo}${restrictionLine}`;
   });
 
   // Find all item IDs that are valid for at least one ship in the filtered candidate list
