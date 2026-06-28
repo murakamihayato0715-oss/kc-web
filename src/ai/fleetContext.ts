@@ -764,8 +764,12 @@ export async function buildFleetContext(
     else if ([3, 38].includes(type)) { category = 'largeGun'; score = (itemMaster.fire || 0) + remodelBonus * 1.5; }
     else if (type === 4) { category = 'secGun'; score = (itemMaster.fire || 0) + remodelBonus; }
     else if ([5, 32].includes(type)) { category = 'torpedo'; score = (itemMaster.torpedo || 0) + remodelBonus * 1.2; }
-    else if ([6, 39, 45, 48].includes(type)) { category = 'fighter'; score = (itemMaster.antiAir || 0) + maxRemodel * 0.2; }
-    else if ([7, 8, 47, 56, 57].includes(type)) { category = 'bomber'; score = (itemMaster.torpedo || 0) + (itemMaster.bomber || 0) + maxRemodel * 0.2; }
+    else if ([6, 39, 45, 48].includes(type)) { category = 'fighter'; score = (itemMaster.antiAir || 0) + maxRemodel * 0.2 + (itemMaster.name.includes('岩本') || itemMaster.name.includes('一航戦') ? 5 : 0); }
+    else if ([7, 8, 47, 56, 57].includes(type)) {
+      const isNamedPlane = itemMaster.name.includes('村田隊') || itemMaster.name.includes('友永隊') || itemMaster.name.includes('一航戦') || itemMaster.name.includes('江草隊');
+      category = 'bomber';
+      score = (itemMaster.torpedo || 0) * 1.5 + (itemMaster.bomber || 0) * 1.5 + maxRemodel * 0.5 + (isNamedPlane ? 10 : 0);
+    }
     else if ([9, 10, 41, 49, 58].includes(type)) { category = 'recon'; score = (itemMaster.scout || 0) + maxRemodel * 0.2; }
     else if ([12, 13, 22].includes(type)) { category = 'radar'; score = (itemMaster.scout || 0) + (itemMaster.accuracy || 0) + remodelBonus; }
     else if ([14, 15, 24, 40, 53].includes(type)) { category = 'asw'; score = (itemMaster.asw || 0) + remodelBonus; }
