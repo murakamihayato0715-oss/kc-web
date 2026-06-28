@@ -135,7 +135,7 @@ export class FleetOptimizer {
       const retreatNode = simResult.highestRetreatNode || '不明';
 
       if (reach < 70) {
-        if (summaryText.includes('対潜') || ['B', 'C', 'D', 'H', 'K'].some(n => retreatNode.includes(n))) {
+        if (summaryText.includes('対潜') || ['B', 'C', 'D', 'H', 'K'].some((n) => retreatNode.includes(n))) {
           reviewTactics.push(`・【道中安定性診断】${retreatNode}マス付近の潜水艦による被害が目立ちます。過剰な水上火力を調整し、先制対潜攻撃可能な艦娘（ソナー/爆雷）を1〜2隻組み込んで道中撤退を防止してください。`);
         }
         if (summaryText.includes('空襲') || summaryText.includes('航空') || summaryText.includes('制空')) {
@@ -145,11 +145,11 @@ export class FleetOptimizer {
       }
 
       if (sinkRate < 80) {
-        reviewTactics.push('・【ボス撃破力診断】ボス到達後の撃破率（現在' + sinkRate + '%）を極大化するため、離島棲姫・集積地棲姫等の陸上型ボスには三式弾・WG42・士魂隊・内火艇・大発動艇を集中配備し、水上ボスには運の高い艦への夜戦カットイン（魚雷CI/主魚電CI）や夜偵・照明弾を強化してください。');
+        reviewTactics.push(`・【ボス撃破力診断】ボス到達後の撃破率（現在${sinkRate}%）を極大化するため、離島棲姫・集積地棲姫等の陸上型ボスには三式弾・WG42・士魂隊・内火艇・大発動艇を集中配備し、水上ボスには運の高い艦への夜戦カットイン（魚雷CI/主魚電CI）や夜偵・照明弾を強化してください。`);
       }
 
       if (buckets >= 3.0) {
-        reviewTactics.push('・【コスト・修復診断】修理バケツ消費（平均' + buckets + '個）を抑えるため、小口径主砲+電探セットでの回避命中強化や中破ストッパー・装甲バルジの追加を検討してください。');
+        reviewTactics.push(`・【コスト・修復診断】修理バケツ消費（平均${buckets}個）を抑えるため、小口径主砲+電探セットでの回避命中強化や中破ストッパー・装甲バルジの追加を検討してください。`);
       }
 
       const tacticsText = reviewTactics.length > 0 ? reviewTactics.join('\n') : '・【総合診断】全体バランスが極めて良好です。さらなる微調整で到達率と撃破率の100%極限追求を行ってください。';

@@ -342,7 +342,12 @@ export function buildCalcManagerFromSuggestion(
 
       // shipStockから増設解放状態を取得
       const stockItem = safeShipStock.find((s: any) => s && s.id === shipMaster.id);
-      const releaseExpand = (exItem && exItem.data && exItem.data.id > 0) ? true : (stockItem ? stockItem.releaseExpand : false);
+      let releaseExpand = false;
+      if (exItem && exItem.data && exItem.data.id > 0) {
+        releaseExpand = true;
+      } else if (stockItem) {
+        releaseExpand = !!stockItem.releaseExpand;
+      }
 
       const builtShip = new Ship({
         master: shipMaster,
