@@ -125,6 +125,49 @@ const FALLBACK_MAP_THREATS: Record<string, Record<string, any[]>> = {
       { name: '南方棲戦姫', hp: 380, armor: 188, traits: ['ボス'] },
       { name: '戦艦レ級flagship', hp: 270, armor: 130, traits: ['先制雷撃あり', '超強力'] }
     ]
+  },
+  '6-4': {
+    'B': [
+      { name: '潜水カ級flagship', hp: 42, armor: 21, traits: ['潜水艦', '先制雷撃あり'] }
+    ],
+    'D': [
+      { name: '軽巡ツ級', hp: 48, armor: 48, traits: ['強力対空'] },
+      { name: '駆逐イ級後期型', hp: 40, armor: 28, traits: [] }
+    ],
+    'C': [
+      { name: '軽母ヌ級elite', hp: 84, armor: 70, traits: ['先制航空攻撃あり'] }
+    ],
+    'F': [
+      { name: '重巡リ級flagship', hp: 76, armor: 40, traits: [] },
+      { name: '軽巡ツ級', hp: 48, armor: 48, traits: ['強力対空'] }
+    ],
+    'N': [
+      { name: '離島棲姫', hp: 450, armor: 160, traits: ['陸上型', 'ボス旗艦', '三式弾/WG42特効'] },
+      { name: '集積地棲姫', hp: 600, armor: 130, traits: ['陸上型', '内火艇/士魂隊/大発動艇超特効'] },
+      { name: '砲台小鬼', hp: 160, armor: 100, traits: ['陸上型', '対地装備特効'] }
+    ]
+  },
+  '6-5': {
+    'A': [
+      { name: '軽母ヌ級flagship', hp: 90, armor: 80, traits: ['先制航空攻撃あり'] }
+    ],
+    'C': [
+      { name: '潜水ソ級flagship', hp: 48, armor: 24, traits: ['潜水艦', '先制雷撃あり'] }
+    ],
+    'D': [
+      { name: '軽巡ツ級', hp: 48, armor: 48, traits: ['強力対空'] }
+    ],
+    'F': [
+      { name: '空母ヲ級改flagship', hp: 160, armor: 90, traits: ['強力先制航空'] }
+    ],
+    'G': [
+      { name: '重巡ネ級flagship', hp: 85, armor: 60, traits: [] }
+    ],
+    'M': [
+      { name: '空母棲姫', hp: 350, armor: 150, traits: ['ボス旗艦', '高制空値(敵制空112/優勢168)'] },
+      { name: '戦艦タ級flagship', hp: 90, armor: 96, traits: [] },
+      { name: '軽巡ツ級elite', hp: 56, armor: 52, traits: ['強力対空'] }
+    ]
   }
 };
 

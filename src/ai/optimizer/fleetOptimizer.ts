@@ -129,25 +129,30 @@ export class FleetOptimizer {
         onStatusUpdate(`第 ${generation} 世代: 検証完了 (到達率:${reach}%, 旗艦撃破率:${sinkRate}%, S勝利率:${win}%, バケツ:${buckets}個)`, suggestion);
       }
 
-      // 戦術アドバイス(レビュー)の自動生成
+      // 動的・包括的戦術アドバイス(レビュー)の多角的大致診断
       const reviewTactics: string[] = [];
-      if (reach < 60) {
-        if (simResult.battleLogSummary?.includes('対潜') || simResult.highestRetreatNode?.includes('D') || simResult.highestRetreatNode?.includes('B')) {
-          reviewTactics.push('・【戦術レビュー】対潜マスでの事故が大破撤退の主要因です。先制対潜が可能な艦娘やソナー・爆雷装備を導入してください。');
-        } else if (simResult.battleLogSummary?.includes('空襲') || simResult.battleLogSummary?.includes('航空')) {
-          reviewTactics.push('・【戦術レビュー】敵航空攻撃による被害が甚大です。秋月型等の対空カットイン艦や対空電探・高角砲を装備し防空を強化してください。');
-        } else {
-          reviewTactics.push('・【戦術レビュー】水上戦マスでの大破撤退が多発しています。過剰火力よりも命中率（電探・★付き主砲）や守備力（増設バルジ・警戒陣）を重視してください。');
+      const summaryText = simResult.battleLogSummary || '';
+      const retreatNode = simResult.highestRetreatNode || '不明';
+
+      if (reach < 70) {
+        if (summaryText.includes('対潜') || ['B', 'C', 'D', 'H', 'K'].some(n => retreatNode.includes(n))) {
+          reviewTactics.push(`・【道中安定性診断】${retreatNode}マス付近の潜水艦による被害が目立ちます。過剰な水上火力を調整し、先制対潜攻撃可能な艦娘（ソナー/爆雷）を1〜2隻組み込んで道中撤退を防止してください。`);
         }
-      }
-      if (reach >= 40 && sinkRate < 70) {
-        reviewTactics.push('・【戦術レビュー】ボス到達率に対して旗艦撃破率が不足しています。夜戦カットイン（魚雷CI/主魚電CI/夜偵/照明弾）や対地特効装備（三式弾/WG42/士魂隊/内火艇/大発）を増強してください。');
-      }
-      if (buckets >= 4.0) {
-        reviewTactics.push('・【戦術レビュー】修理バケツ消費が多めです。補強増設へのバルジ装着や小口径主砲+電探セットで安定性を高めてください。');
+        if (summaryText.includes('空襲') || summaryText.includes('航空') || summaryText.includes('制空')) {
+          reviewTactics.push(`・【対空・制空診断】${retreatNode}マスでの空襲・航空攻撃による被害が多発しています。対空カットイン艦（秋月型/高角砲+対空電探）や水戦・水爆を補強し、艦隊全体の対空防御を固めてください。`);
+        }
+        reviewTactics.push(`・【水上戦・耐久診断】${retreatNode}マスでの大破撤退対策として、単なる過剰火力追求を避け、命中率（電探・★付き主砲）による確実な敵撃破と、補強増設へのバルジ装着や警戒陣・複縦陣の活用で守備力と安定性を高めてください。`);
       }
 
-      const tacticsText = reviewTactics.length > 0 ? reviewTactics.join('\n') : '・【戦術レビュー】バランス良好です。さらなる微調整で勝率極大化を狙ってください。';
+      if (sinkRate < 80) {
+        reviewTactics.push('・【ボス撃破力診断】ボス到達後の撃破率（現在' + sinkRate + '%）を極大化するため、離島棲姫・集積地棲姫等の陸上型ボスには三式弾・WG42・士魂隊・内火艇・大発動艇を集中配備し、水上ボスには運の高い艦への夜戦カットイン（魚雷CI/主魚電CI）や夜偵・照明弾を強化してください。');
+      }
+
+      if (buckets >= 3.0) {
+        reviewTactics.push('・【コスト・修復診断】修理バケツ消費（平均' + buckets + '個）を抑えるため、小口径主砲+電探セットでの回避命中強化や中破ストッパー・装甲バルジの追加を検討してください。');
+      }
+
+      const tacticsText = reviewTactics.length > 0 ? reviewTactics.join('\n') : '・【総合診断】全体バランスが極めて良好です。さらなる微調整で到達率と撃破率の100%極限追求を行ってください。';
 
       currentFeedback = `
 【第 ${generation} 世代のシミュレータ出撃統計 ＆ 戦術レビュー分析】
