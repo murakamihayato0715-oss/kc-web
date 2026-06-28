@@ -49,19 +49,20 @@ export class SimulatorAdapter {
       context.shipStocks,
     );
 
-    let mapIdToApply = overrideMapId || suggestion.mapId;
-    if (!mapIdToApply) {
-      const userReq = context.siteSetting?.userRequest || '';
-      const match = userReq.match(/([1-7])-([1-7])/);
-      if (match) {
-        mapIdToApply = parseInt(`${match[1]}${match[2]}`, 10);
-      }
+    let mapIdToApply: number | undefined = undefined;
+    const userReq = context.siteSetting?.userRequest || '';
+    const reqMatch = userReq.match(/([1-7])-([1-7])/);
+    if (reqMatch) {
+      mapIdToApply = parseInt(`${reqMatch[1]}${reqMatch[2]}`, 10);
+    } else {
+      mapIdToApply = overrideMapId || suggestion.mapId;
     }
+
     if (!mapIdToApply && manager.battleInfo && manager.battleInfo.fleets[0] && manager.battleInfo.fleets[0].area) {
       mapIdToApply = manager.battleInfo.fleets[0].area;
     }
     if (!mapIdToApply) {
-      mapIdToApply = 65; // デフォルト6-5補全
+      mapIdToApply = 32; // デフォルト3-2等へ安全設定
     }
 
     if (mapIdToApply) {

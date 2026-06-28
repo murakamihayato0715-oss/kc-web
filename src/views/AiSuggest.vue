@@ -221,6 +221,7 @@ export default Vue.extend({
       if (!this.inputMessage.trim() || this.loading) return;
       const userText = this.inputMessage;
       this.inputMessage = '';
+      this.setting.userRequest = userText;
       this.loading = true;
       this.isCancelled = false;
       this.loadingText = '最適化探索中...';

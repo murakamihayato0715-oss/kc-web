@@ -578,8 +578,10 @@ export async function buildFleetContext(
       return;
     }
 
-    // 提督の指示文に特定の艦娘名が含まれている場合、該当艦娘を最優先で候補に追加
-    const matchedRequestedShip = master && request.includes(master.name.split('(')[0]);
+    // 提督の指示文に特定の艦娘名が含まれている場合、ベース艦名(改二/改等を正規化)も含めて柔軟マッチング
+    const baseName = master ? master.name.split('(')[0].replace(/(改二甲|改二乙|改二重|改二丁|改二特|改二|改甲|改乙|改丁|改|特|甲|乙|重|三|丁|Mk\.II)/g, '').trim() : '';
+    const fullName = master ? master.name.split('(')[0].trim() : '';
+    const matchedRequestedShip = master && baseName && (request.includes(baseName) || request.includes(fullName));
 
     const isSpecial =
       matchedRequestedShip ||
@@ -615,8 +617,10 @@ export async function buildFleetContext(
   uniqueSelected.sort((a, b) => {
     const mA = shipMasters.find((m) => m && m.id === a.id);
     const mB = shipMasters.find((m) => m && m.id === b.id);
-    const reqA = mA && request.includes(mA.name.split('(')[0]);
-    const reqB = mB && request.includes(mB.name.split('(')[0]);
+    const baseA = mA ? mA.name.split('(')[0].replace(/(改二甲|改二乙|改二重|改二丁|改二特|改二|改甲|改乙|改丁|改|特|甲|乙|重|三|丁|Mk\.II)/g, '').trim() : '';
+    const baseB = mB ? mB.name.split('(')[0].replace(/(改二甲|改二乙|改二重|改二丁|改二特|改二|改甲|改乙|改丁|改|特|甲|乙|重|三|丁|Mk\.II)/g, '').trim() : '';
+    const reqA = mA && baseA && (request.includes(baseA) || request.includes(mA.name.split('(')[0]));
+    const reqB = mB && baseB && (request.includes(baseB) || request.includes(mB.name.split('(')[0]));
     if (reqA !== reqB) return reqA ? -1 : 1;
 
     const aActive = activeShipIds.has(a.id);
