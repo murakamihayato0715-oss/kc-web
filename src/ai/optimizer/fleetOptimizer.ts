@@ -129,11 +129,6 @@ export class FleetOptimizer {
         onStatusUpdate(`第 ${generation} 世代: 検証完了 (到達率:${reach}%, 旗艦撃破率:${sinkRate}%, S勝利率:${win}%, バケツ:${buckets}個)`, suggestion);
       }
 
-      if (sinkRate >= 85 || win >= 85) {
-        if (onStatusUpdate) onStatusUpdate('目標撃破率(85%以上)を達成したため、探索を正常終了します。');
-        break;
-      }
-
       currentFeedback = `
 【第 ${generation} 世代のシミュレータ出撃統計レポート】
 ・ボス到達率: ${reach}% 

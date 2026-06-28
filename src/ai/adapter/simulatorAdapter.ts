@@ -70,8 +70,18 @@ export class SimulatorAdapter {
       applyMapAndEnemies(manager, mapIdToApply, safeCells, context.enemiesMaster, context.items);
     }
 
-    // 💡 【イベント難易度の自動反映・保存】 (0:甲, 1:乙, 2:丙, 3:丁)
-    if (manager && manager.airbaseInfo) {
+    // 💡 基地航空隊の派遣先（ボスマス）自動設定および難易度設定
+    if (manager && manager.airbaseInfo && manager.battleInfo && Array.isArray(manager.battleInfo.fleets)) {
+      const battleFleets = manager.battleInfo.fleets;
+      const bossIdx = battleFleets.length > 0 ? battleFleets.length - 1 : 0;
+      if (Array.isArray(manager.airbaseInfo.airbases)) {
+        manager.airbaseInfo.airbases.forEach((ab: any) => {
+          if (ab && ab.mode === 1) { // 出撃モード
+            ab.battleTarget = [bossIdx, bossIdx];
+          }
+        });
+      }
+
       let diffLevel: 0 | 1 | 2 | 3 = 0; // デフォルト甲
       if (context.siteSetting?.userRequest) {
         const req = context.siteSetting.userRequest;
