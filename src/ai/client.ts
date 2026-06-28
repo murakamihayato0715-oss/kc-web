@@ -1,6 +1,6 @@
 /* eslint-disable */
 import { AiConfig, MultiFleetSuggestion, ChatMessage, SimulationResult } from './types';
-import { validateSuggestion, buildValidationMessage } from './suggestionValidator';
+import { validateSuggestion, buildValidationMessage, strictFilterSuggestionWithStock } from './suggestionValidator';
 
 import ItemStock from '../classes/item/itemStock';
 import ItemMaster from '../classes/item/itemMaster';
@@ -31,7 +31,7 @@ const COMMON_SUGGESTION_RULES = `
    - リクエストされた海域（3-2なら32、6-4なら64、6-5なら65、5-5なら55）の数値IDを、返却JSONの \`mapId\` プロパティに必ず設定してください。
 `;
 
-async function fetchAiText(
+export async function fetchAiText(
   config: AiConfig,
   messages: Array<{ role: string; content: string }>,
   isJsonMode = false,
@@ -414,6 +414,8 @@ export async function chatWithAi(
   fleetContext = '',
   knowledgeContext = '',
   mode = 'fleet',
+  itemStocks: ItemStock[] = [],
+  itemMasters: ItemMaster[] = [],
 ): Promise<ChatMessage | null> {
   const modelName = config.model || 'qwen3.5:9b-long';
 
@@ -519,10 +521,11 @@ ${modeInstruction}
       try {
         const parsed = JSON.parse(jsonCandidate);
         if (parsed && typeof parsed === 'object' && (parsed.message !== undefined || parsed.suggestion !== undefined)) {
+          const safeSuggestion = parsed.suggestion && itemStocks.length > 0 ? strictFilterSuggestionWithStock(parsed.suggestion, itemStocks, itemMasters) : parsed.suggestion;
           return {
             role: 'model',
             message: parsed.message !== undefined ? parsed.message : cleaned.substring(0, firstBrace).trim() || '編成案を提示します。',
-            suggestion: parsed.suggestion || undefined,
+            suggestion: safeSuggestion || undefined,
           };
         }
       } catch (parseErr) {

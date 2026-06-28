@@ -453,3 +453,65 @@ export function applyEquipmentDowngrade(
 
   return { suggestion: newSuggestion, notes };
 }
+
+// ============================
+// ⑤ 実在庫（itemStock）に基づく100%厳格な装備フィルタ
+// ============================
+
+export function strictFilterSuggestionWithStock(
+  suggestion: MultiFleetSuggestion | undefined,
+  itemStocks: ItemStock[],
+  itemMasters: ItemMaster[],
+): MultiFleetSuggestion | undefined {
+  if (!suggestion) return suggestion;
+  const newSuggestion: MultiFleetSuggestion = JSON.parse(JSON.stringify(suggestion));
+  const usageMap = new Map<string, number>();
+
+  const processStrict = (eqName: string): string => {
+    if (!eqName || typeof eqName !== 'string') return '';
+    const parsed = parseEquipmentName(eqName);
+    const itemMaster = itemMasters.find((m) => m.name === parsed.baseName);
+    if (!itemMaster) return ''; // 架空・未知の装備は完全除去
+
+    // 在庫チェック
+    const stock = itemStocks.find((s) => s.id === itemMaster.id);
+    const maxStockCount = stock ? (stock.num[parsed.remodel] || 0) : 0;
+    const key = `${itemMaster.id}:${parsed.remodel}`;
+    const currentUsed = usageMap.get(key) || 0;
+
+    if (currentUsed < maxStockCount) {
+      usageMap.set(key, currentUsed + 1);
+      return eqName;
+    }
+
+    // 在庫がない/使い切った場合：手持ちの中で同系統(apiTypeId)の所有装備を探して置換
+    const sameTypeMasters = itemMasters.filter((m) => m.apiTypeId === itemMaster.apiTypeId);
+    for (const altMaster of sameTypeMasters) {
+      const altStock = itemStocks.find((s) => s.id === altMaster.id);
+      if (!altStock) continue;
+
+      for (let r = altStock.num.length - 1; r >= 0; r--) {
+        const available = altStock.num[r] || 0;
+        const altKey = `${altMaster.id}:${r}`;
+        const altUsed = usageMap.get(altKey) || 0;
+        if (altUsed < available) {
+          usageMap.set(altKey, altUsed + 1);
+          const repName = r > 0 ? `${altMaster.name}★+${r}` : altMaster.name;
+          return parsed.isEx ? `補強増設:${repName}` : repName;
+        }
+      }
+    }
+
+    return ''; // 代用も手持ちになければ空欄にして赤背景エラーを防ぐ
+  };
+
+  for (const fleet of (newSuggestion.fleets || [])) {
+    for (const ship of (fleet.ships || [])) {
+      if (ship.equipments) {
+        ship.equipments = ship.equipments.map((eq) => processStrict(eq)).filter((eq) => eq.length > 0);
+      }
+    }
+  }
+
+  return newSuggestion;
+}
