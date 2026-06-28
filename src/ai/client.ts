@@ -229,6 +229,8 @@ export async function suggestFleet(
   fleetContext = '',
   knowledgeContext = '',
   retryCount = 0,
+  itemStocks: ItemStock[] = [],
+  itemMasters: ItemMaster[] = [],
 ): Promise<MultiFleetSuggestion | null> {
   const prompt = `【絶対厳守ルール】思考プロセス（Thinking Process）、挨拶、前置き、Markdownのコードブロック記法（\`\`\`json ... \`\`\`）は一切出力しないでください。1文字目から純粋なJSONオブジェクト（{）のみを出力し、最後まで完全なJSONとして完結させてください。
 
@@ -270,13 +272,14 @@ ${fleetContext ? `【提督の手持ち情報と現在編成】\n${fleetContext}
     const parsed = parseAndRepairJson(text);
     if (parsed && typeof parsed === 'object' && parsed.fleets) {
       console.log('[KC-データログ] 💡 AI提案編成(パース/修復成功):', parsed);
-      return parsed as MultiFleetSuggestion;
+      const safeSuggestion = itemStocks.length > 0 ? strictFilterSuggestionWithStock(parsed as MultiFleetSuggestion, itemStocks, itemMasters) : (parsed as MultiFleetSuggestion);
+      return safeSuggestion || null;
     }
 
     console.warn('[KC-エージェント] suggestFleet: JSONパース/修復に失敗しました。');
     if (retryCount < 1) {
       console.warn('[KC-エージェント] 🔄 自動リトライを実行します (試行 2/2)...');
-      return suggestFleet(config, `${userRequest}\n※前回の出力が途切れました。思考プロセスや解説テキストを一切出力せず、1文字目から純粋なJSONのみを出力してください。`, fleetContext, knowledgeContext, retryCount + 1);
+      return suggestFleet(config, `${userRequest}\n※前回の出力が途切れました。思考プロセスや解説テキストを一切出力せず、1文字目から純粋なJSONのみを出力してください。`, fleetContext, knowledgeContext, retryCount + 1, itemStocks, itemMasters);
     }
 
     return null;
