@@ -755,16 +755,20 @@ export async function buildFleetContext(
     let category = 'others';
     let score = 0;
 
-    if (type === 1) { category = 'smallGun'; score = itemMaster.fire || 0; }
-    else if (type === 2) { category = 'mediumGun'; score = itemMaster.fire || 0; }
-    else if ([3, 38].includes(type)) { category = 'largeGun'; score = itemMaster.fire || 0; }
-    else if (type === 4) { category = 'secGun'; score = itemMaster.fire || 0; }
-    else if ([5, 32].includes(type)) { category = 'torpedo'; score = itemMaster.torpedo || 0; }
-    else if ([6, 39, 45, 48].includes(type)) { category = 'fighter'; score = itemMaster.antiAir || 0; }
-    else if ([7, 8, 47, 56, 57].includes(type)) { category = 'bomber'; score = (itemMaster.torpedo || 0) + (itemMaster.bomber || 0); }
-    else if ([9, 10, 41, 49, 58].includes(type)) { category = 'recon'; score = itemMaster.scout || 0; }
-    else if ([12, 13, 22].includes(type)) { category = 'radar'; score = (itemMaster.scout || 0) + (itemMaster.accuracy || 0); }
-    else if ([14, 15, 24, 40, 53].includes(type)) { category = 'asw'; score = itemMaster.asw || 0; }
+    // 最高改修値を特定して★補正を加算
+    const maxRemodel = stock.num.reduce((max, val, idx) => (val > 0 ? idx : max), 0);
+    const remodelBonus = Math.sqrt(maxRemodel);
+
+    if (type === 1) { category = 'smallGun'; score = (itemMaster.fire || 0) + remodelBonus; }
+    else if (type === 2) { category = 'mediumGun'; score = (itemMaster.fire || 0) + remodelBonus; }
+    else if ([3, 38].includes(type)) { category = 'largeGun'; score = (itemMaster.fire || 0) + remodelBonus * 1.5; }
+    else if (type === 4) { category = 'secGun'; score = (itemMaster.fire || 0) + remodelBonus; }
+    else if ([5, 32].includes(type)) { category = 'torpedo'; score = (itemMaster.torpedo || 0) + remodelBonus * 1.2; }
+    else if ([6, 39, 45, 48].includes(type)) { category = 'fighter'; score = (itemMaster.antiAir || 0) + maxRemodel * 0.2; }
+    else if ([7, 8, 47, 56, 57].includes(type)) { category = 'bomber'; score = (itemMaster.torpedo || 0) + (itemMaster.bomber || 0) + maxRemodel * 0.2; }
+    else if ([9, 10, 41, 49, 58].includes(type)) { category = 'recon'; score = (itemMaster.scout || 0) + maxRemodel * 0.2; }
+    else if ([12, 13, 22].includes(type)) { category = 'radar'; score = (itemMaster.scout || 0) + (itemMaster.accuracy || 0) + remodelBonus; }
+    else if ([14, 15, 24, 40, 53].includes(type)) { category = 'asw'; score = (itemMaster.asw || 0) + remodelBonus; }
     else if (type === 17) { category = 'engine'; score = 0; }
     else if ([30, 37].includes(type)) { category = 'landing'; score = 0; }
 
