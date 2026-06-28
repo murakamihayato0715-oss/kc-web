@@ -567,7 +567,7 @@ export async function buildFleetContext(
     selectedStocks.push(...group.slice(0, 4));
   });
 
-  // 重複除去および優先度順ソート
+  // 重複除去および優先度順ソート（同一キャラは最高レベルの1隻のみに厳選）
   const uniqueSelected = Array.from(new Set(selectedStocks));
   uniqueSelected.sort((a, b) => {
     const mA = shipMasters.find((m) => m && m.id === a.id);
@@ -588,7 +588,19 @@ export async function buildFleetContext(
     return b.level - a.level;
   });
 
-  let filteredStocks = uniqueSelected;
+  // キャラクター単位での1隻重複排除（レベル最高隻を残す）
+  const charDeduplicated: ShipStock[] = [];
+  const seenCharIds = new Set<number | string>();
+  uniqueSelected.forEach((stock) => {
+    const master = shipMasters.find((m) => m && m.id === stock.id);
+    const charKey = master ? (master.originalId || master.albumId || master.name.split('(')[0]) : stock.id;
+    if (!seenCharIds.has(charKey)) {
+      seenCharIds.add(charKey);
+      charDeduplicated.push(stock);
+    }
+  });
+
+  let filteredStocks = charDeduplicated;
   if (filteredStocks.length > 80) {
     filteredStocks = filteredStocks.slice(0, 80);
   }
