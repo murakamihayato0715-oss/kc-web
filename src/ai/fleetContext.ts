@@ -800,8 +800,9 @@ export async function buildFleetContext(
       return bRemodelMax - aRemodelMax;
     });
 
-    const top10 = list.slice(0, 10);
-    top10.forEach((entry) => {
+    // 各カテゴリ最優良の上位4種類(上位改修・上位性能)へ厳選し、AIへ手渡すトークン量を大幅削減・精鋭化
+    const top4 = list.slice(0, 4);
+    top4.forEach((entry) => {
       allowedItemIds.add(entry.stock.id);
     });
   });
