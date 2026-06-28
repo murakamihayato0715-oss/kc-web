@@ -535,7 +535,11 @@ export async function buildFleetContext(
       return;
     }
 
+    // 提督の指示文に特定の艦娘名が含まれている場合、該当艦娘を最優先で候補に追加
+    const matchedRequestedShip = master && request.includes(master.name.split('(')[0]);
+
     const isSpecial =
+      matchedRequestedShip ||
       activeShipIds.has(stock.id) ||
       unconditionalAswIds.includes(master.id) ||
       specialAttackLeaderIds.includes(master.id) ||
@@ -566,13 +570,17 @@ export async function buildFleetContext(
   // 重複除去および優先度順ソート
   const uniqueSelected = Array.from(new Set(selectedStocks));
   uniqueSelected.sort((a, b) => {
+    const mA = shipMasters.find((m) => m && m.id === a.id);
+    const mB = shipMasters.find((m) => m && m.id === b.id);
+    const reqA = mA && request.includes(mA.name.split('(')[0]);
+    const reqB = mB && request.includes(mB.name.split('(')[0]);
+    if (reqA !== reqB) return reqA ? -1 : 1;
+
     const aActive = activeShipIds.has(a.id);
     const bActive = activeShipIds.has(b.id);
     if (aActive !== bActive) return aActive ? -1 : 1;
 
     if (isAswMap) {
-      const mA = shipMasters.find((m) => m && m.id === a.id);
-      const mB = shipMasters.find((m) => m && m.id === b.id);
       const aswA = mA?.maxAsw || 0;
       const aswB = mB?.maxAsw || 0;
       if (aswA !== aswB) return aswB - aswA;
@@ -588,12 +596,12 @@ export async function buildFleetContext(
   const candidateNames = filteredStocks.map(stock => {
     const master = shipMasters.find((m) => m.id === stock.id);
     const tag = stock.area ? `[札${stock.area}]` : '[無札]';
-    return master ? `${master.name}(Lv${stock.level})${tag}` : `ID:${stock.id}`;
+    return master ? `${master.name}(shipId:${stock.id}/Lv${stock.level})${tag}` : `shipId:${stock.id}`;
   });
   console.log('Candidate Ships Passed to AI:', candidateNames);
   console.log('=======================================');
 
-  // 手持ち艦娘リスト（火力、雷装、対空、対潜、索敵、回避、運、速力、補強増設、先制対潜、出撃札、スロット制限の完全フォーマット）
+  // 手持ち艦娘リスト（shipIdを明記）
   const shipLines = filteredStocks.map((stock) => {
     const master = shipMasters.find((m) => m.id === stock.id);
     const name = master ? master.name : `ID:${stock.id}`;
@@ -611,7 +619,6 @@ export async function buildFleetContext(
     const luckVal = master ? master.luck + (stock.improvement?.luck || 0) : 0;
     const speedVal = master ? (master.speed === 10 ? '高速' : master.speed === 5 ? '低速' : `速力${master.speed}`) : '不明';
 
-    // 先制対潜の判定
     const isAswReady = (stock && master) ? checkOaswPotential(stock, master, itemStocks, itemMasters) : '';
 
     let restrictionLine = '';
@@ -631,7 +638,7 @@ export async function buildFleetContext(
 
     const statsInfo = ` [HP:${hpVal}/火力:${fireVal}/雷装:${torpedoVal}/対空:${antiAirVal}/対潜:${aswVal}/索敵:${scoutVal}/回避:${avoidVal}/運:${luckVal}/${speedVal}]`;
 
-    return `・${name}(${typeName}) Lv${stock.level}${expand}${areaTag}${isAswReady}${slotCountText}${slotsText}${statsInfo}${restrictionLine}`;
+    return `・${name} (shipId:${stock.id}, ${typeName}) Lv${stock.level}${expand}${areaTag}${isAswReady}${slotCountText}${slotsText}${statsInfo}${restrictionLine}`;
   });
 
   // Find all item IDs that are valid for at least one ship in the filtered candidate list

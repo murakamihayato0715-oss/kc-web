@@ -225,10 +225,11 @@ ${fleetContext ? `【提督の手持ち情報と現在編成】\n${fleetContext}
 
 【返却 JSON フォーマット（JSON以外のテキスト出力厳禁）】
 {
+  "mapId": 64,
   "fleets": [
     {
       "ships": [
-        { "name": "艦娘名 (LvXX)", "slot": 1, "equipments": ["装備名★+X", "装備名★+Y"] }
+        { "shipId": 541, "name": "長門改二 (Lv130)", "slot": 1, "equipments": ["装備名★+X", "装備名★+Y"] }
       ],
       "comment": "この編成の解説"
     }
