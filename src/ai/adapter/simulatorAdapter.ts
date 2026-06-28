@@ -49,7 +49,21 @@ export class SimulatorAdapter {
       context.shipStocks,
     );
 
-    const mapIdToApply = overrideMapId || suggestion.mapId;
+    let mapIdToApply = overrideMapId || suggestion.mapId;
+    if (!mapIdToApply) {
+      const userReq = context.siteSetting?.userRequest || '';
+      const match = userReq.match(/([1-7])-([1-7])/);
+      if (match) {
+        mapIdToApply = parseInt(`${match[1]}${match[2]}`, 10);
+      }
+    }
+    if (!mapIdToApply && manager.battleInfo && manager.battleInfo.fleets[0] && manager.battleInfo.fleets[0].area) {
+      mapIdToApply = manager.battleInfo.fleets[0].area;
+    }
+    if (!mapIdToApply) {
+      mapIdToApply = 65; // デフォルト6-5補全
+    }
+
     if (mapIdToApply) {
       // 参照を切り離してストア/マスタのセルデータを適用
       const safeCells = Array.isArray(context.cells) ? cloneDeep(context.cells) : [];

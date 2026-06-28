@@ -106,6 +106,7 @@ export class FleetOptimizer {
         const match = userRequest.match(/([1-7])-([1-7])/);
         if (match) mapIdToApply = parseInt(`${match[1]}${match[2]}`, 10);
       }
+      if (!mapIdToApply) mapIdToApply = 65; // デフォルト6-5
 
       // アダプター経由での計算実行
       const simResult: SimulationResult = await simulatorAdapter.executeSimulation(
@@ -116,27 +117,31 @@ export class FleetOptimizer {
 
       const reach = simResult.bossReachRate ?? 0;
       const win = simResult.bossSWinRate ?? 0;
-      const fitnessScore = reach * win;
+      const sinkRate = simResult.bossFlagshipSinkRate ?? 0;
+      const buckets = simResult.bucketsUsed ?? 0;
+      const fitnessScore = sinkRate * 100 + reach * 10 + win;
 
       if (fitnessScore > highestScore) {
         highestScore = fitnessScore;
         bestSuggestion = suggestion;
-        if (onStatusUpdate) onStatusUpdate(`★ 第 ${generation} 世代: ベスト編成更新！(到達率:${reach}%, S勝利率:${win}%)`, suggestion);
+        if (onStatusUpdate) onStatusUpdate(`第 ${generation} 世代: ベスト編成更新！ (到達率:${reach}%, 旗艦撃破率:${sinkRate}%, S勝利率:${win}%, バケツ:${buckets}個)`, suggestion);
       } else if (onStatusUpdate) {
-        onStatusUpdate(`第 ${generation} 世代: 検証完了 (到達率:${reach}%, S勝利率:${win}%)`, suggestion);
+        onStatusUpdate(`第 ${generation} 世代: 検証完了 (到達率:${reach}%, 旗艦撃破率:${sinkRate}%, S勝利率:${win}%, バケツ:${buckets}個)`, suggestion);
       }
 
-      if (win >= 85) {
-        if (onStatusUpdate) onStatusUpdate('🎯 目標勝率(85%以上)を達成したため、探索を正常終了します。');
+      if (sinkRate >= 85 || win >= 85) {
+        if (onStatusUpdate) onStatusUpdate('目標撃破率(85%以上)を達成したため、探索を正常終了します。');
         break;
       }
 
       currentFeedback = `
 【第 ${generation} 世代のシミュレータ出撃統計レポート】
 ・ボス到達率: ${reach}% 
+・ボス旗艦撃破率: ${sinkRate}%
 ・ボスS勝利率: ${win}%
-・最大の壁: 道中は「 ${simResult.highestRetreatNode} マス 」での大破撤退が最も多発しています。
-・戦闘ボトルネックの分析: ${simResult.battleLogSummary}
+・バケツ平均消費: ${buckets}個
+・最大の壁: 道中は「 ${simResult.highestRetreatNode || '不明'} マス 」での大破撤退が最も多発しています。
+・戦闘ボトルネックの分析: ${simResult.battleLogSummary || '特記なし'}
       `.trim();
     }
 
