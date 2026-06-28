@@ -368,7 +368,7 @@ export default Vue.extend({
         const searchTerms = this.chatHistory.filter((m) => m.role === 'user').map((m) => m.message).join(' ');
         const knowledgeContext = await buildKnowledgeContext(searchTerms);
 
-        const aiResponse = await chatWithAi(this.config, this.chatHistory, fleetContext, knowledgeContext, this.selectedMode, this.$store.state.itemStock, this.$store.state.items);
+        const aiResponse = await chatWithAi(this.config, this.chatHistory, fleetContext, knowledgeContext, this.selectedMode, this.$store.state.itemStock, this.$store.state.items, this.$store.state.ships);
 
         if (aiResponse) {
           this.chatHistory.push(aiResponse);

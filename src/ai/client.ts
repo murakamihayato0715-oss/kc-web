@@ -1,6 +1,7 @@
 /* eslint-disable */
 import { AiConfig, MultiFleetSuggestion, ChatMessage, SimulationResult } from './types';
 import { validateSuggestion, buildValidationMessage, strictFilterSuggestionWithStock } from './suggestionValidator';
+import { solveEquipmentFromLogic } from './equipmentSolver';
 
 import ItemStock from '../classes/item/itemStock';
 import ItemMaster from '../classes/item/itemMaster';
@@ -431,6 +432,7 @@ export async function chatWithAi(
   mode = 'fleet',
   itemStocks: ItemStock[] = [],
   itemMasters: ItemMaster[] = [],
+  shipMasters: ShipMaster[] = [],
 ): Promise<ChatMessage | null> {
   const modelName = config.model || 'qwen3.5:9b-long';
 
@@ -500,7 +502,19 @@ ${modeInstruction}
   messages.unshift({ role: 'system', content: systemInstructionText });
   
   if (fleetContext || knowledgeContext) {
-    const contextText = `【提督の手持ち情報と現在編成】\n${fleetContext}\n\n【知識ベース】\n${knowledgeContext}`;
+    let contextText = `【提督の手持ち情報と現在編成】\n${fleetContext}\n\n【知識ベース】\n${knowledgeContext}`;
+    
+    // 提督のリクエストから艦娘を特定し、kc-webロジック(ShipValidation)で直接プリソルブした確実な手持ち装備案をコンテキストへ強制注入
+    const lastUserMsg = chatHistory.slice().reverse().find((m) => m.role === 'user')?.message || '';
+    if (lastUserMsg && shipMasters.length > 0 && itemStocks.length > 0) {
+      const targetShipMaster = shipMasters.find((s) => s && s.name && lastUserMsg.includes(s.name.split('(')[0]));
+      if (targetShipMaster) {
+        const solved = solveEquipmentFromLogic(targetShipMaster, lastUserMsg, itemStocks, itemMasters);
+        if (solved && solved.equipments.length > 0) {
+          contextText += `\n\n【kc-web内部計算ロジック(ShipValidation/Item)による手持ち在庫完全適合の100%正確な確定装備選出結果】\n対象艦娘: ${targetShipMaster.name}\n確定装備リスト: [${solved.equipments.join(', ')}]\n※上記確定装備リストはkc-webの判定エンジンが提督の所有在庫(itemStock)から直接算出した絶対的最適解です。解説文章や提案では必ずこの装備リストの名称をそのまま100%忠実に出力してください。`;
+        }
+      }
+    }
     messages.unshift({ role: 'system', content: contextText });
   }
 
