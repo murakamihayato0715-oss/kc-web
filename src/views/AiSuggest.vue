@@ -503,12 +503,12 @@ ${compResult.summary}
       const itemMasters = this.$store.state.items;
 
       const deck: any = { version: 4, hqlv: 120 };
-      suggestion.fleets.forEach((fleetSuggest: any, fIdx) => {
+      suggestion.fleets.forEach((fleetSuggest: any, fIdx: number) => {
         const fleetKey = `f${fIdx + 1}`;
         const fleetObj: any = { name: fleetSuggest.name || `第${fIdx + 1}艦隊`, t: 0 };
         const shipsArray = Array.isArray(fleetSuggest.ships) ? fleetSuggest.ships : [];
 
-        shipsArray.forEach((shipSuggest: any, sIdx) => {
+        shipsArray.forEach((shipSuggest: any, sIdx: number) => {
           const shipKey = `s${sIdx + 1}`;
           const cleanedShipName = (shipSuggest.name || '').split('(')[0].trim();
           const shipMaster = shipMasters.find((s: any) => s && (s.id === shipSuggest.shipId || s.name === cleanedShipName));
@@ -526,7 +526,7 @@ ${compResult.summary}
             const baseEqName = eqCleanName.replace(/★\+\d+/, '').trim();
 
             let itemMaster = null;
-            const equipIds = shipSuggest.equipIds;
+            const { equipIds } = shipSuggest;
             if (Array.isArray(equipIds) && equipIds[eqIdx]) {
               const targetEqId = equipIds[eqIdx];
               itemMaster = itemMasters.find((i: any) => i && i.id === targetEqId);
