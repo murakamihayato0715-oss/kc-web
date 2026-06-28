@@ -224,14 +224,15 @@ ${fleetContext ? `【提督の手持ち情報と現在編成】\n${fleetContext}
 リクエスト: ${userRequest}
 
 【返却 JSON フォーマット（JSON以外のテキスト出力厳禁）】
+※通常艦隊はfleets配列要素1つ、連合艦隊（機動/水上/輸送等12隻）や遊撃部隊の場合はfleets配列に第1艦隊・第2艦隊を順番に含めてください。
 {
-  "mapId": 64,
+  "mapId": 65,
   "fleets": [
     {
       "ships": [
         { "shipId": 541, "name": "長門改二 (Lv130)", "slot": 1, "equipments": ["装備名★+X", "装備名★+Y"] }
       ],
-      "comment": "この編成の解説"
+      "comment": "第1艦隊の解説"
     }
   ],
   "comment": "全体的な解説を100文字以内で"
