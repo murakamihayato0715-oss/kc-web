@@ -317,10 +317,11 @@ export function buildCalcManagerFromSuggestion(
           const itemProficiency = itemMaster.isPlane ? 120 : 0;
           const canEquipEx = ShipValidation.isValidItem(shipMaster, itemMaster, Const.EXPAND_SLOT_INDEX, remodel);
 
-          if (isExHeader || (normalItems.length >= (shipMaster.slotCount || 0) && canEquipEx)) {
-            if (canEquipEx) {
-              exItem = new Item({ master: itemMaster, remodel, slot: 0, level: itemProficiency });
-            }
+          const isTurbineOrExSpecial = baseEqName.includes('タービン') || baseEqName.includes('機銃') || baseEqName.includes('見張員') || baseEqName.includes('バルジ') || baseEqName.includes('高射装置') || baseEqName.includes('高圧缶');
+          const isExTarget = isExHeader || (isTurbineOrExSpecial && (!exItem || !exItem.data || exItem.data.id <= 0)) || (normalItems.length >= (shipMaster.slotCount || 0) && canEquipEx);
+
+          if (isExTarget && canEquipEx) {
+            exItem = new Item({ master: itemMaster, remodel, slot: 0, level: itemProficiency });
           } else {
             const itemSlotIdx = normalItems.length;
             if (ShipValidation.isValidItem(shipMaster, itemMaster, itemSlotIdx, remodel)) {
