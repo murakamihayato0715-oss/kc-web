@@ -525,56 +525,6 @@
                 </div>
               </div>
             </div>
-            <div>
-              <div class="site-setting-header">
-                <div class="body-2">AI設定 (Gemini)</div>
-                <div class="header-divider" />
-              </div>
-              <div class="site-setting-body">
-                <v-select
-                  v-model="aiConfig.provider"
-                  :items="aiProviders"
-                  label="AIプロバイダー"
-                  outlined
-                  dense
-                  hide-details
-                  class="mb-3"
-                />
-                <v-text-field
-                  v-model="aiConfig.apiKey"
-                  label="APIキー"
-                  outlined
-                  dense
-                  hide-details
-                  :type="showAiKey ? 'text' : 'password'"
-                  :append-icon="showAiKey ? 'mdi-eye-off' : 'mdi-eye'"
-                  @click:append="showAiKey = !showAiKey"
-                  :disabled="aiConfig.provider === 'none' || aiConfig.provider === 'mock' || aiConfig.provider === 'ollama'"
-                  class="mb-3"
-                />
-                <v-select
-                  v-model="aiConfig.model"
-                  :items="aiModels"
-                  label="モデル"
-                  outlined
-                  dense
-                  hide-details
-                  :disabled="aiConfig.provider === 'none' || aiConfig.provider === 'mock'"
-                  class="mb-3"
-                />
-                <v-alert v-if="testAiResult" :type="testAiResult.ok ? 'success' : 'error'" dense class="body-2 mb-3">
-                  {{ testAiResult.message }}
-                </v-alert>
-                <div class="d-flex align-center">
-                  <v-btn @click="testAiConnection" :loading="testingAi" :disabled="aiConfig.provider === 'none'" outlined small class="mr-2">
-                    接続テスト
-                  </v-btn>
-                  <v-btn @click="saveAiSettings" color="primary" small>
-                    保存
-                  </v-btn>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </v-card>
@@ -807,9 +757,6 @@ import SiteSetting, { SiteTheme } from '@/classes/siteSetting';
 import FirebaseManager from '@/classes/firebaseManager';
 import LZString from 'lz-string';
 import AiSuggest from '@/views/AiSuggest.vue';
-import { loadAiConfig, saveAiConfig } from '@/ai/storage';
-import { suggestFleet } from '@/ai/client';
-import { AiConfig } from '@/ai/types';
 import ShipStock from './classes/fleet/shipStock';
 import ItemStock from './classes/item/itemStock';
 import Fleet from './classes/fleet/fleet';
@@ -887,22 +834,6 @@ export default Vue.extend({
     shipStockDiffDialog: false,
     isMobile: true,
     mobileTabDialog: false,
-    aiConfig: { provider: 'none', apiKey: '', model: 'gemini-2.5-flash' } as AiConfig,
-    showAiKey: false,
-    testingAi: false,
-    testAiResult: null as { ok: boolean; message: string } | null,
-    aiProviders: [
-      { text: '使用しない', value: 'none' },
-      { text: 'Google Gemini', value: 'gemini' },
-      { text: 'Ollama (ローカルLLM)', value: 'ollama' },
-      { text: 'ローカルデバッグ (無料・モック応答)', value: 'mock' },
-    ],
-    aiModels: [
-      { text: 'qwen3.5:9b (ローカル長考モデル)', value: 'qwen3.5:9b' },
-      { text: 'Gemini 3.5 Flash (最新・超高速)', value: 'gemini-3.5-flash' },
-      { text: 'Gemini 2.5 Flash (安定・推奨)', value: 'gemini-2.5-flash' },
-      { text: 'Gemini 2.5 Pro (高精度・複雑な思考)', value: 'gemini-2.5-pro' },
-    ],
   }),
   computed: {
     getCompletedAll() {
@@ -1038,9 +969,6 @@ export default Vue.extend({
   created() {
     this.setting = this.$store.state.siteSetting as SiteSetting;
     this.saveData = this.$store.state.saveData as SaveData;
-    loadAiConfig().then((config) => {
-      this.aiConfig = config;
-    });
     // セーブデータの更新を購読
     this.unsubscribe = this.$store.subscribe((mutation, state) => {
       if (mutation.type === 'updateSaveData') {
@@ -1098,30 +1026,11 @@ export default Vue.extend({
     });
   },
   methods: {
-    async saveAiSettings() {
-      await saveAiConfig(this.aiConfig);
-      // ★保存完了をアプリケーション全体に通知するイベントを発行
-      this.$root.$emit('ai-config-changed');
-      this.inform('AI設定を保存しました。');
-    },
     clearAiHistory() {
       const aiSuggest = this.$refs.aiSuggest as any;
       if (aiSuggest && typeof aiSuggest.clearHistory === 'function') {
         aiSuggest.clearHistory();
       }
-    },
-    async testAiConnection() {
-      this.testingAi = true;
-      this.testAiResult = null;
-      try {
-        const result = await suggestFleet(this.aiConfig, '5-4を制空確保で周回したい');
-        this.testAiResult = result
-          ? { ok: true, message: '接続成功！AIが応答しました。' }
-          : { ok: false, message: 'APIキーを確認してください。' };
-      } catch (err: any) {
-        this.testAiResult = { ok: false, message: `接続失敗: ${err.message || 'エラーが発生しました。'}` };
-      }
-      this.testingAi = false;
     },
     startResize() {
       document.addEventListener('mousemove', this.resize);
