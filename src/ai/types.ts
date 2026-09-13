@@ -1,11 +1,3 @@
-export type AiProvider = 'gemini' | 'none' | 'ollama' | 'mock';
-
-export interface AiConfig {
-  provider: 'none' | 'gemini' | 'ollama' | 'mock';
-  apiKey: string;
-  model: string;
-}
-
 export interface ShipSuggestion {
   name: string;
   shipId?: number; // 艦娘マスターID (例: 916)

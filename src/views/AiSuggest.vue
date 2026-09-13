@@ -4,62 +4,19 @@
     <div v-if="!isSidebar" class="d-flex align-center mb-3 px-2 pt-2">
       <div>
         <div class="text-h6 font-weight-bold">AI提督チャット ＆ 自律攻略エージェント</div>
-        <div class="text-caption text--secondary">ルート・勝率を考慮した自律最適化を実行します</div>
+        <div class="text-caption text--secondary">APIキー不要・コピペ方式。お好きなAIチャット（Claude.ai等）と組み合わせて使えます</div>
       </div>
       <v-spacer />
-      <v-btn outlined color="primary" small class="mr-2" @click="openSettings">
-        <v-icon left small>mdi-cog</v-icon>AI設定
-      </v-btn>
       <v-btn v-if="chatHistory.length > 0" outlined color="error" small @click="clearHistory">
         <v-icon left small>mdi-delete-sweep</v-icon>クリア
       </v-btn>
     </div>
 
-    <!-- AI設定ダイアログ -->
-    <v-dialog v-model="showSettingsDialog" max-width="500px">
-      <v-card class="pa-4" style="border-radius: 12px;">
-        <v-card-title class="text-h6 font-weight-bold">AI通信 ＆ モデル設定</v-card-title>
-        <v-card-text class="pt-3">
-          <v-select
-            v-model="tempConfig.provider"
-            :items="[
-              { text: 'Gemini (クラウド高速AI / 推奨)', value: 'gemini' },
-              { text: 'Ollama (ローカルLLM)', value: 'ollama' }
-            ]"
-            label="AIプロバイダー"
-            outlined
-            dense
-            @change="onProviderChange"
-          />
-          <v-text-field
-            v-if="tempConfig.provider === 'gemini'"
-            v-model="tempConfig.apiKey"
-            label="Gemini API Key"
-            placeholder="AIzaSy..."
-            outlined
-            dense
-            type="password"
-            hint="Google AI Studioで無料発行できるAPIキーを入力してください"
-            persistent-hint
-            class="mb-4"
-          />
-          <v-text-field
-            v-model="tempConfig.model"
-            label="使用モデル名"
-            outlined
-            dense
-            placeholder="gemini-2.5-flash または qwen3.5:9b-long"
-          />
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn text @click="showSettingsDialog = false">キャンセル</v-btn>
-          <v-btn color="primary" class="font-weight-bold" @click="saveSettings">保存</v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
-
     <v-card ref="chatWindow" class="flex-grow-1 overflow-y-auto pa-4 mb-3 d-flex flex-column" style="background: rgba(0, 0, 0, 0.02); border-radius: 12px; gap: 16px;" outlined>
+      <div v-if="chatHistory.length === 0" class="text-body-2 text--secondary text-center pa-4">
+        下のモードを選び、要望を入力して「プロンプトを作成」を押すと、コピー用のテキストが表示されます。<br>
+        それをClaude.aiなど好きなAIチャットに貼り付けて回答をもらい、ここに貼り戻してください。
+      </div>
       <div v-for="(msg, index) in chatHistory" :key="index" :class="['d-flex', msg.role === 'user' ? 'justify-end' : 'justify-start']">
         <v-card :color="msg.role === 'user' ? 'primary' : 'white'" :dark="msg.role === 'user'" class="pa-3" style="border-radius: 12px;" outlined>
           <div class="text-body-2" v-html="formatMessage(msg.message)"></div>
@@ -72,8 +29,41 @@
       </div>
     </v-card>
 
-    <v-card class="pa-3" outlined style="border-radius: 12px; background: white;">
-      <!-- モード切替ボタン群 -->
+    <v-alert v-if="error" dense outlined type="error" class="mb-2">{{ error }}</v-alert>
+
+    <!-- コピペブリッジ: プロンプトのコピー & AI回答の貼り付け -->
+    <v-card v-if="bridgeMode" class="pa-3" outlined style="border-radius: 12px; background: white; border: 2px solid #1976d2;">
+      <div class="d-flex align-center mb-2">
+        <v-icon color="primary" class="mr-2">mdi-content-copy</v-icon>
+        <div class="text-subtitle-2 font-weight-bold">① 下記をコピーして、お使いのAIチャット（Claude.ai等）に貼り付けてください</div>
+        <v-spacer />
+        <div v-if="bridgeMode === 'optimizer' && optimizer" class="text-caption text--secondary">
+          自律攻略 第{{ optimizer.currentGeneration }}/{{ optimizer.maxGenerations }}世代
+        </div>
+      </div>
+      <v-textarea :value="bridgePrompt" readonly outlined dense rows="7" class="mb-2" style="font-size: 12px;" />
+      <div class="d-flex mb-4">
+        <v-btn small color="primary" @click="copyPrompt">
+          <v-icon left small>mdi-content-copy</v-icon>{{ copied ? 'コピーしました！' : 'プロンプトをコピー' }}
+        </v-btn>
+      </div>
+
+      <div class="text-subtitle-2 font-weight-bold mb-2">② AIチャットからの回答をここに貼り付けてください</div>
+      <v-textarea v-model="bridgePaste" outlined dense rows="7" hide-details placeholder="AIの回答（JSONを含む場合はそのまま）をここに貼り付け..." class="mb-2" />
+      <div class="d-flex align-center" style="gap: 8px;">
+        <v-btn text @click="cancelBridge">キャンセル</v-btn>
+        <v-spacer />
+        <v-btn v-if="bridgeMode === 'optimizer'" outlined color="warning" @click="finishOptimizerEarly">
+          ここで終了してベストを採用
+        </v-btn>
+        <v-btn color="primary" :disabled="!bridgePaste.trim() || loading" :loading="loading" @click="submitBridgeReply">
+          解析して反映
+        </v-btn>
+      </div>
+    </v-card>
+
+    <!-- 通常の入力欄（ブリッジ中は隠す） -->
+    <v-card v-else class="pa-3" outlined style="border-radius: 12px; background: white;">
       <div class="d-flex flex-wrap mb-2" style="gap: 6px;">
         <v-btn
           v-for="m in modes"
@@ -100,13 +90,10 @@
           hide-details
           @keydown.enter.exact.prevent="sendMessage"
         />
-        <v-btn v-if="loading" color="error" class="font-weight-bold" @click="cancelOptimization">
-          <v-icon left>mdi-stop</v-icon>探索を中断
-        </v-btn>
-        <v-btn v-else color="success" class="font-weight-bold" @click="startAutonomousOptimizationLoop">
+        <v-btn color="success" class="font-weight-bold" :loading="building" :disabled="building" @click="startAutonomousOptimizationLoop">
           <v-icon left>mdi-flash</v-icon>自律攻略
         </v-btn>
-        <v-btn color="primary" @click="sendMessage" :disabled="loading">送信</v-btn>
+        <v-btn color="primary" :loading="building" :disabled="building" @click="sendMessage">プロンプトを作成</v-btn>
       </div>
     </v-card>
   </v-container>
@@ -114,18 +101,20 @@
 
 <script lang="ts">
 import Vue from 'vue';
-import { ChatMessage, MultiFleetSuggestion, SimulationResult, AiConfig } from '@/ai/types';
-import { chatWithAi } from '@/ai/client';
+import { ChatMessage, MultiFleetSuggestion, SimulationResult } from '@/ai/types';
+import { buildAiPrompt } from '@/ai/promptBuilder';
+import { parseAiReply } from '@/ai/responseParser';
+import { ManualFleetOptimizer } from '@/ai/optimizer/fleetOptimizer';
 import { simulatorAdapter, AdapterSimulationContext } from '@/ai/adapter/simulatorAdapter';
-import { fleetOptimizer } from '@/ai/optimizer/fleetOptimizer';
 import { buildFleetContext } from '@/ai/fleetContext';
 import { buildKnowledgeContext } from '@/ai/knowledge';
-import { loadAiConfig, saveAiConfig } from '@/ai/storage';
 import { applyMapAndEnemies } from '@/ai/utils';
 import Ship from '@/classes/fleet/ship';
 import Item from '@/classes/item/item';
 import ShipValidation from '@/classes/fleet/shipValidation';
 import Const from '@/classes/const';
+
+const HISTORY_KEY = 'ai_fleet_chat_history';
 
 export default Vue.extend({
   name: 'AiSuggest',
@@ -135,21 +124,19 @@ export default Vue.extend({
   data() {
     return {
       inputMessage: '',
-      loading: false,
-      loadingText: '',
+      building: false, // プロンプト生成中（コンテキスト構築の待ち時間）
+      loading: false, // ローカルシミュレーション実行中
       error: '',
-      config: null as AiConfig | null,
-      showSettingsDialog: false,
-      tempConfig: {
-        provider: 'gemini',
-        apiKey: '',
-        model: 'gemini-2.5-flash',
-      } as AiConfig,
       chatHistory: [] as ChatMessage[],
       simulationLoading: [] as boolean[],
       simulationResult: [] as any[],
       selectedMode: 'fleet',
-      isCancelled: false,
+      // コピペブリッジ状態
+      bridgeMode: null as null | 'chat' | 'optimizer',
+      bridgePrompt: '',
+      bridgePaste: '',
+      copied: false,
+      optimizer: null as ManualFleetOptimizer | null,
       modes: [
         { id: 'fleet', label: '編成（編成+装備作成）', icon: 'mdi-ship-wheel', placeholder: '【編成モード】目的の海域や戦況（例：7-1 周回編成）を入力してください...' },
         { id: 'equip', label: '装備（装備換装）', icon: 'mdi-sword', placeholder: '【装備モード】換装したい艦娘や目標（例：空母の対空・FBAカットイン装備）を入力してください...' },
@@ -166,10 +153,12 @@ export default Vue.extend({
       return mode ? mode.placeholder : 'メッセージを入力...';
     },
   },
-  async created() {
-    this.config = await loadAiConfig();
-    if (this.config) {
-      this.tempConfig = { ...this.config };
+  created() {
+    try {
+      const saved = localStorage.getItem(HISTORY_KEY);
+      if (saved) this.chatHistory = JSON.parse(saved);
+    } catch (e) {
+      console.warn('Failed to restore AI chat history', e);
     }
     if (!this.$store.state.cells || this.$store.state.cells.length === 0) {
       this.$store.dispatch('loadCellData');
@@ -182,139 +171,47 @@ export default Vue.extend({
     formatMessage(text: string): string {
       return text ? text.replace(/\n/g, '<br>') : '';
     },
-    openSettings() {
-      if (this.config) {
-        this.tempConfig = { ...this.config };
-      }
-      this.showSettingsDialog = true;
-    },
-    onProviderChange(val: string) {
-      if (val === 'gemini') {
-        this.tempConfig.model = 'gemini-2.5-flash';
-      } else if (val === 'ollama') {
-        this.tempConfig.model = 'qwen3.5:9b-long';
-      }
-    },
-    async saveSettings() {
-      if (this.tempConfig.apiKey) {
-        this.tempConfig.apiKey = this.tempConfig.apiKey.trim();
-      }
-      this.config = { ...this.tempConfig };
-      await saveAiConfig(this.config);
-      console.log('[KC-エージェント] ⚙️ AI設定を保存しました:', { provider: this.config.provider, model: this.config.model, hasApiKey: !!this.config.apiKey });
-      this.showSettingsDialog = false;
-    },
     saveHistoryToStorage() {
-      localStorage.setItem('ai_fleet_chat_history', JSON.stringify(this.chatHistory));
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(this.chatHistory));
     },
     clearHistory() {
       this.chatHistory = [];
       this.saveHistoryToStorage();
+      this.cancelBridge();
     },
-    cancelOptimization() {
-      this.isCancelled = true;
-      this.loadingText = '探索を中断中...';
+    scrollToBottom() {
+      Vue.nextTick(() => {
+        const container = this.$refs.chatWindow as HTMLElement;
+        if (container) container.scrollTop = container.scrollHeight;
+      });
     },
-
-    // --- 自律攻略機能 ---
-    async startAutonomousOptimizationLoop() {
-      if (!this.inputMessage.trim() || this.loading) return;
-      const userText = this.inputMessage;
-      this.inputMessage = '';
-      this.setting.userRequest = userText;
-      this.loading = true;
-      this.isCancelled = false;
-      this.loadingText = '最適化探索中...';
-
+    async copyPrompt() {
       try {
-        let { calcManager } = this.$store.state;
-        if (!calcManager && this.$store.state.mainSaveData) {
-          const { items, ships, siteSetting: setting } = this.$store.state;
-          const enemies = this.$store.getters.getEnemies;
-          calcManager = this.$store.state.mainSaveData.loadManagerData(items, ships, enemies, setting.admiralLevel);
-        }
-
-        const fleetContext = await buildFleetContext(
-          this.$store.state.shipStock,
-          this.$store.state.ships,
-          this.$store.state.itemStock,
-          this.$store.state.items,
-          this.$store.state.equipShips,
-          userText,
-          calcManager,
-        );
-
-        const knowledgeContext = await buildKnowledgeContext(userText);
-
-        const handleStatusUpdate = (msg: string, suggestion?: MultiFleetSuggestion) => {
-          this.chatHistory.push({
-            role: 'model',
-            message: msg,
-            suggestion: suggestion || undefined,
-          });
-          this.saveHistoryToStorage();
-          this.scrollToBottom();
-        };
-
-        const checkCancelled = () => this.isCancelled;
-
-        const adapterContext: AdapterSimulationContext = {
-          baseCalcManager: calcManager,
-          ships: this.$store.state.ships,
-          items: this.$store.state.items,
-          shipStocks: this.$store.state.shipStock,
-          itemStocks: this.$store.state.itemStock,
-          cells: this.$store.state.cells,
-          enemiesMaster: this.$store.getters.getEnemies,
-          siteSetting: this.setting,
-        };
-
-        const bestSuggestion = await fleetOptimizer.optimize({
-          config: this.config!,
-          userRequest: userText,
-          fleetContext,
-          knowledgeContext,
-          adapterContext,
-          onStatusUpdate: handleStatusUpdate,
-          checkCancelled,
-        });
-
-        if (bestSuggestion && !this.isCancelled) {
-          this.chatHistory.push({
-            role: 'model',
-            message: '最適化探索が完了しました。最も勝率の高い編成を提示します。',
-            suggestion: bestSuggestion,
-          });
-          this.saveHistoryToStorage();
-        } else if (!this.isCancelled) {
-          this.error = '探索を行いましたが、条件を満たす編成が見つかりませんでした。';
-        }
-      } catch (err) {
-        this.error = '探索エラーが発生しました';
-        console.error(err);
-      } finally {
-        this.loading = false;
-        this.loadingText = '';
+        await navigator.clipboard.writeText(this.bridgePrompt);
+        this.copied = true;
+        setTimeout(() => { this.copied = false; }, 1500);
+      } catch (e) {
+        console.warn('クリップボードへのコピーに失敗しました。テキストエリアから手動で選択・コピーしてください。', e);
       }
     },
+    cancelBridge() {
+      this.bridgeMode = null;
+      this.bridgePrompt = '';
+      this.bridgePaste = '';
+      this.optimizer = null;
+    },
 
-    async runSimulationForSuggestion(suggestion: MultiFleetSuggestion): Promise<SimulationResult> {
+    getCalcManager(): any {
       let { calcManager } = this.$store.state;
       if (!calcManager && this.$store.state.mainSaveData) {
         const { items, ships, siteSetting: setting } = this.$store.state;
         const enemies = this.$store.getters.getEnemies;
         calcManager = this.$store.state.mainSaveData.loadManagerData(items, ships, enemies, setting.admiralLevel);
       }
-
-      let mapIdToApply = suggestion.mapId;
-      if (!mapIdToApply) {
-        const match = this.inputMessage.match(/([1-7])-([1-7])/) || (this.chatHistory.slice().reverse().find((m) => m.role === 'user')?.message || '').match(/([1-7])-([1-7])/);
-        if (match) {
-          mapIdToApply = parseInt(`${match[1]}${match[2]}`, 10);
-        }
-      }
-
-      const adapterContext: AdapterSimulationContext = {
+      return calcManager;
+    },
+    buildAdapterContext(calcManager: any): AdapterSimulationContext {
+      return {
         baseCalcManager: calcManager,
         ships: this.$store.state.ships,
         items: this.$store.state.items,
@@ -324,37 +221,22 @@ export default Vue.extend({
         enemiesMaster: this.$store.getters.getEnemies,
         siteSetting: this.setting,
       };
-
-      return simulatorAdapter.executeSimulation(suggestion, adapterContext, mapIdToApply);
     },
 
-    scrollToBottom() {
-      Vue.nextTick(() => {
-        const container = this.$refs.chatWindow as HTMLElement;
-        if (container) container.scrollTop = container.scrollHeight;
-      });
-    },
+    // --- 通常チャット（コピペ方式） ---
     async sendMessage() {
-      if (!this.config || !this.inputMessage.trim() || this.loading) return;
+      if (!this.inputMessage.trim() || this.building || this.bridgeMode) return;
 
       const userText = this.inputMessage;
       this.inputMessage = '';
       this.error = '';
-      this.loadingText = 'AI提督が考え中...';
-
       this.chatHistory.push({ role: 'user', message: userText });
       this.saveHistoryToStorage();
       this.scrollToBottom();
-      this.loading = true;
+      this.building = true;
 
       try {
-        let { calcManager } = this.$store.state;
-        if (!calcManager && this.$store.state.mainSaveData) {
-          const { items, ships, siteSetting: setting } = this.$store.state;
-          const enemies = this.$store.getters.getEnemies;
-          calcManager = this.$store.state.mainSaveData.loadManagerData(items, ships, enemies, setting.admiralLevel);
-        }
-
+        const calcManager = this.getCalcManager();
         const fleetContext = await buildFleetContext(
           this.$store.state.shipStock,
           this.$store.state.ships,
@@ -364,28 +246,117 @@ export default Vue.extend({
           userText,
           calcManager,
         );
-
         const searchTerms = this.chatHistory.filter((m) => m.role === 'user').map((m) => m.message).join(' ');
         const knowledgeContext = await buildKnowledgeContext(searchTerms);
 
-        const aiResponse = await chatWithAi(this.config, this.chatHistory, fleetContext, knowledgeContext, this.selectedMode, this.$store.state.itemStock, this.$store.state.items, this.$store.state.ships);
-
-        if (aiResponse) {
-          this.chatHistory.push(aiResponse);
-          this.saveHistoryToStorage();
-          if (aiResponse.suggestion) {
-            this.runSimulationForMessage(this.chatHistory.length - 1);
-          }
-        } else {
-          this.error = 'AIからの応答を取得できませんでした。';
-        }
+        this.bridgePrompt = buildAiPrompt(this.chatHistory, {
+          mode: this.selectedMode,
+          fleetContext,
+          knowledgeContext,
+          itemStocks: this.$store.state.itemStock,
+          itemMasters: this.$store.state.items,
+          shipMasters: this.$store.state.ships,
+        });
+        this.bridgePaste = '';
+        this.bridgeMode = 'chat';
       } catch (err) {
-        console.error('Chat API Error:', err);
-        this.error = '通信中にエラーが発生しました。';
+        console.error('Prompt build error:', err);
+        this.error = 'プロンプトの生成中にエラーが発生しました。';
       } finally {
-        this.loading = false;
+        this.building = false;
         this.scrollToBottom();
       }
+    },
+
+    // --- 自律攻略（コピペ方式・半自律ループ） ---
+    async startAutonomousOptimizationLoop() {
+      if (!this.inputMessage.trim() || this.building || this.bridgeMode) return;
+      const userText = this.inputMessage;
+      this.inputMessage = '';
+      this.error = '';
+      this.building = true;
+
+      try {
+        const calcManager = this.getCalcManager();
+        const fleetContext = await buildFleetContext(
+          this.$store.state.shipStock,
+          this.$store.state.ships,
+          this.$store.state.itemStock,
+          this.$store.state.items,
+          this.$store.state.equipShips,
+          userText,
+          calcManager,
+        );
+        const knowledgeContext = await buildKnowledgeContext(userText);
+        const adapterContext = this.buildAdapterContext(calcManager);
+
+        this.optimizer = new ManualFleetOptimizer(userText, fleetContext, knowledgeContext, adapterContext, 8);
+        this.chatHistory.push({ role: 'user', message: `【自律攻略開始】${userText}` });
+        this.bridgePrompt = this.optimizer.buildNextPrompt();
+        this.bridgePaste = '';
+        this.bridgeMode = 'optimizer';
+        this.saveHistoryToStorage();
+      } catch (err) {
+        console.error('Optimizer start error:', err);
+        this.error = '自律攻略の開始中にエラーが発生しました';
+      } finally {
+        this.building = false;
+        this.scrollToBottom();
+      }
+    },
+
+    async submitBridgeReply() {
+      if (!this.bridgePaste.trim() || this.loading) return;
+      const pastedText = this.bridgePaste;
+
+      if (this.bridgeMode === 'chat') {
+        const parsed = parseAiReply(pastedText, this.$store.state.itemStock, this.$store.state.items);
+        const aiMessage: ChatMessage = { role: 'model', message: parsed.message, suggestion: parsed.suggestion };
+        this.chatHistory.push(aiMessage);
+        this.saveHistoryToStorage();
+        this.cancelBridge();
+        this.scrollToBottom();
+        if (aiMessage.suggestion) {
+          this.runSimulationForMessage(this.chatHistory.length - 1);
+        }
+        return;
+      }
+
+      if (this.bridgeMode === 'optimizer' && this.optimizer) {
+        this.loading = true;
+        try {
+          const outcome = await this.optimizer.submitRoundReply(pastedText);
+          this.chatHistory.push({ role: 'model', message: outcome.statusMessage, suggestion: outcome.suggestion });
+          this.saveHistoryToStorage();
+          this.scrollToBottom();
+
+          if (outcome.finished) {
+            this.finalizeOptimizer();
+          } else {
+            this.bridgePrompt = this.optimizer.buildNextPrompt();
+            this.bridgePaste = '';
+          }
+        } catch (err) {
+          console.error('Optimizer round error:', err);
+          this.error = 'この世代の検証中にエラーが発生しました';
+        } finally {
+          this.loading = false;
+        }
+      }
+    },
+    finalizeOptimizer() {
+      const best = this.optimizer ? this.optimizer.best : null;
+      if (best) {
+        this.chatHistory.push({ role: 'model', message: '自律攻略探索が完了しました。最も勝率の高い編成を提示します。', suggestion: best });
+      } else {
+        this.chatHistory.push({ role: 'model', message: '探索を行いましたが、条件を満たす編成が見つかりませんでした。' });
+      }
+      this.saveHistoryToStorage();
+      this.scrollToBottom();
+      this.cancelBridge();
+    },
+    finishOptimizerEarly() {
+      this.finalizeOptimizer();
     },
 
     async runSimulationForMessage(index: number) {
@@ -395,14 +366,10 @@ export default Vue.extend({
       const loadingArr = [...this.simulationLoading];
       loadingArr[index] = true;
       this.simulationLoading = loadingArr;
+      this.loading = true;
 
       try {
-        let { calcManager } = this.$store.state;
-        if (!calcManager && this.$store.state.mainSaveData) {
-          const { items, ships, siteSetting: setting } = this.$store.state;
-          const enemies = this.$store.getters.getEnemies;
-          calcManager = this.$store.state.mainSaveData.loadManagerData(items, ships, enemies, setting.admiralLevel);
-        }
+        const calcManager = this.getCalcManager();
 
         let mapIdToApply = msg.suggestion.mapId;
         if (!mapIdToApply) {
@@ -411,17 +378,7 @@ export default Vue.extend({
           if (match) mapIdToApply = parseInt(match[1] + match[2], 10);
         }
 
-        const adapterContext: AdapterSimulationContext = {
-          baseCalcManager: calcManager,
-          ships: this.$store.state.ships,
-          items: this.$store.state.items,
-          shipStocks: this.$store.state.shipStock,
-          itemStocks: this.$store.state.itemStock,
-          cells: this.$store.state.cells,
-          enemiesMaster: this.$store.getters.getEnemies,
-          siteSetting: this.setting,
-        };
-
+        const adapterContext = this.buildAdapterContext(calcManager);
         const result = await simulatorAdapter.executeSimulation(msg.suggestion, adapterContext, mapIdToApply);
         const resArr = [...this.simulationResult];
         resArr[index] = result;
@@ -433,6 +390,7 @@ export default Vue.extend({
         const arr = [...this.simulationLoading];
         arr[index] = false;
         this.simulationLoading = arr;
+        this.loading = false;
       }
     },
 
@@ -441,15 +399,9 @@ export default Vue.extend({
       if (!msg || !msg.suggestion) return;
 
       this.loading = true;
-      this.loadingText = '⚔️ 提督の現在編成 vs AI提案編成 を比較検証中 (各5000回出撃)...';
 
       try {
-        let { calcManager } = this.$store.state;
-        if (!calcManager && this.$store.state.mainSaveData) {
-          const { items, ships, siteSetting: setting } = this.$store.state;
-          const enemies = this.$store.getters.getEnemies;
-          calcManager = this.$store.state.mainSaveData.loadManagerData(items, ships, enemies, setting.admiralLevel);
-        }
+        const calcManager = this.getCalcManager();
 
         let mapIdToApply = msg.suggestion.mapId;
         if (!mapIdToApply) {
@@ -458,17 +410,7 @@ export default Vue.extend({
           if (match) mapIdToApply = parseInt(match[1] + match[2], 10);
         }
 
-        const adapterContext: AdapterSimulationContext = {
-          baseCalcManager: calcManager,
-          ships: this.$store.state.ships,
-          items: this.$store.state.items,
-          shipStocks: this.$store.state.shipStock,
-          itemStocks: this.$store.state.itemStock,
-          cells: this.$store.state.cells,
-          enemiesMaster: this.$store.getters.getEnemies,
-          siteSetting: this.setting,
-        };
-
+        const adapterContext = this.buildAdapterContext(calcManager);
         const compResult = await simulatorAdapter.compareFleets(msg.suggestion, adapterContext, mapIdToApply);
 
         const textReport = `
@@ -495,7 +437,6 @@ ${compResult.summary}
         this.error = '比較シミュレーション中にエラーが発生しました';
       } finally {
         this.loading = false;
-        this.loadingText = '';
       }
     },
     openCompassSim(suggestion: MultiFleetSuggestion) {
@@ -679,7 +620,7 @@ ${compResult.summary}
         }
       });
 
-      // 💡 【修正3: 基地航空隊の反映】提案に基地航空隊データが含まれる場合、計算機へ反映
+      // 💡 【基地航空隊の反映】提案に基地航空隊データが含まれる場合、計算機へ反映
       if (Array.isArray(suggestion.airbases) && manager.airbaseInfo && Array.isArray(manager.airbaseInfo.airbases)) {
         suggestion.airbases.forEach((abSuggest: any) => {
           if (!abSuggest) return;

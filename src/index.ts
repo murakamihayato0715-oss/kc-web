@@ -1,17 +1,12 @@
 /* eslint-disable */
-import { suggestFleet } from './ai/client';
-import { AiConfig } from './ai/types';
+// コピペ方式プロンプトのプレビュー用スクリプト。
+// API通信は行わない。promptBuilder が実際にどんなテキストを組み立てるかを
+// ターミナルで確認するための開発用ツール（`npm run preview-prompt`）。
+import { buildAiPrompt } from './ai/promptBuilder';
+import { ChatMessage } from './ai/types';
 
-async function testLocalAi() {
-  const config: AiConfig = {
-    provider: 'gemini',
-    apiKey: 'local-dummy',
-    model: 'qwen3.5:9b'
-  };
-
-  console.log(`[KC-TEST] ローカルOllama（モデル: ${config.model}）への疎通テストを開始します...`);
-
-  const dummyUserRequest = "5-5海域向けの装備をアセンブルしてください。";
+function previewPrompt() {
+  const dummyUserRequest = '5-5海域向けの装備をアセンブルしてください。';
   const dummyFleetContext = `
 【所持装備一覧】
 ·51cm連装砲★+10 x 2
@@ -26,31 +21,22 @@ async function testLocalAi() {
 ・タシュケント改(駆逐艦) Lv95
   `.trim();
 
-  const dummyKnowledgeContext = "【海域情報】5-5ボスには強力な空母レ級などが配備されています。";
+  const dummyKnowledgeContext = '【海域情報】5-5ボスには強力な空母レ級などが配備されています。';
 
-  try {
-    const startTime = Date.now();
-    
-    // client.ts の suggestFleet をキック
-    // ※生出力を確認するため、内部エラーが起きても catch できるようにします
-    const result = await suggestFleet(config, dummyUserRequest, dummyFleetContext, dummyKnowledgeContext);
-    
-    const endTime = Date.now();
-    console.log(`\n[KC-TEST] ➔ AIからの応答フェーズ終了（計算時間: ${((endTime - startTime) / 1000).toFixed(2)}秒）`);
-    
-    if (result) {
-      console.log("==================================================");
-      console.log("【生成されたアセンブルJSON結果】");
-      console.log(JSON.stringify(result, null, 2));
-      console.log("==================================================");
-      console.log("➔ 疎通テストは【正常完了】です。");
-    } else {
-      console.log("❌ AIからの戻り値が null でした。client.ts 側のエラーログを確認してください。");
-    }
+  const chatHistory: ChatMessage[] = [{ role: 'user', message: dummyUserRequest }];
 
-  } catch (error) {
-    console.error("❌ 致命的例外が発生しました:", error);
-  }
+  const prompt = buildAiPrompt(chatHistory, {
+    mode: 'fleet',
+    fleetContext: dummyFleetContext,
+    knowledgeContext: dummyKnowledgeContext,
+  });
+
+  console.log('==================================================');
+  console.log('【提督がコピーしてチャットAIに貼り付けるプロンプトのプレビュー】');
+  console.log('==================================================');
+  console.log(prompt);
+  console.log('==================================================');
+  console.log(`文字数: ${prompt.length}`);
 }
 
-testLocalAi();
+previewPrompt();
